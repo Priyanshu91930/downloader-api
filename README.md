@@ -1,4 +1,4 @@
-# @boy-offi9-inc/btch-downloader-api
+# btch-downloader-api
 
 A small, well-structured REST API that wraps the [`btch-downloader`](https://www.npmjs.com/package/btch-downloader) library, plus a built-in browser page for testing every endpoint without needing Postman.
 
