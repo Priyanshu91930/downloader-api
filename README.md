@@ -1,5 +1,15 @@
 # btch-downloader-api
 
+<p align="left">
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/node-%3E%3D20-339933?logo=node.js&logoColor=white" alt="Node >=20">
+  <img src="https://img.shields.io/badge/express-4.x-000000?logo=express&logoColor=white" alt="Express 4.x">
+  <img src="https://img.shields.io/badge/platforms-17-blueviolet" alt="17 supported platforms">
+  <img src="https://img.shields.io/badge/deploy-Railway%20%7C%20Render%20%7C%20Vercel%20%7C%20Docker-informational" alt="Deploy targets">
+</p>
+
+**[Live demo](https://btch-downloader-api-green.vercel.app/)** — try the endpoint tester without running anything locally.
+
 A small, well-structured REST API that wraps the [`btch-downloader`](https://www.npmjs.com/package/btch-downloader) library, plus a built-in browser page for testing every endpoint without needing Postman.
 
 Fetch public media info/download links from TikTok, Instagram, YouTube, Spotify, Pinterest, SoundCloud, Facebook, Twitter/X, Google Drive, MediaFire, CapCut, Douyin, Xiaohongshu, SnackVideo, and Cocofun — plus an `aio` endpoint that auto-detects the platform from the URL — all through one consistent JSON API.
