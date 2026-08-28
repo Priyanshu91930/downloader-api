@@ -150,6 +150,10 @@ GET /api/download/tiktok?url=https://www.tiktok.com/@user/video/1234567890
 }
 ```
 
+### `GET /api/fetch-media?url=...&filename=...`
+
+Streams a direct media URL (one returned inside a `/api/download` result) back through this server with a `Content-Disposition: attachment` header, so a browser click triggers a real file save instead of opening the raw CDN link. Also blocks requests to loopback/private-network hosts so the route can't be used as an open internal-network proxy.
+
 **Error response shape** (used consistently across the whole API):
 
 ```json

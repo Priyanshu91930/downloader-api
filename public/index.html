@@ -253,6 +253,144 @@
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; }
   }
+  .media-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+  }
+
+  .media-card {
+    background: #0d1412;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .media-card img,
+  .media-card video {
+    width: 100%;
+    max-height: 220px;
+    object-fit: cover;
+    display: block;
+    background: #000;
+  }
+
+  .media-card audio {
+    width: 100%;
+    display: block;
+    margin: 12px;
+    max-width: calc(100% - 24px);
+  }
+
+  .media-card-body {
+    padding: 10px 12px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .media-card-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    word-break: break-all;
+  }
+
+  .media-download-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: var(--accent-dim);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+
+  .media-download-btn:hover {
+    background: var(--accent);
+    color: #06120d;
+  }
+
+  .media-download-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  .media-download-status {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: #ff6b6b;
+    word-break: break-word;
+  }
+
+  .media-empty {
+    color: var(--muted);
+    font-size: 13px;
+    padding: 4px 0;
+  }
+  .switch-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .switch {
+    position: relative;
+    display: inline-block;
+    width: 36px;
+    height: 20px;
+  }
+
+  .switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .switch-track {
+    position: absolute;
+    inset: 0;
+    background: #1b2622;
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    transition: background 0.15s ease;
+  }
+
+  .switch-track::before {
+    content: "";
+    position: absolute;
+    height: 14px;
+    width: 14px;
+    left: 2px;
+    top: 2px;
+    background: var(--muted);
+    border-radius: 50%;
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+
+  .switch input:checked + .switch-track {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+  }
+
+  .switch input:checked + .switch-track::before {
+    transform: translateX(16px);
+    background: var(--accent);
+  }
 </style>
 </head>
 <body>
@@ -286,10 +424,24 @@
 
     <div class="panel">
       <div class="result-header">
-        <h2>Response</h2>
+        <h2>Media</h2>
         <span class="badge" id="resultBadge" style="display:none;"></span>
       </div>
-      <pre id="resultBox"><span class="empty-state">No request made yet.</span></pre>
+      <div id="mediaCards"><span class="empty-state">No request made yet.</span></div>
+    </div>
+
+    <div class="panel" id="rawResponsePanel">
+      <div class="result-header">
+        <h2>Raw response</h2>
+        <label class="switch-label">
+          <span>Show</span>
+          <span class="switch">
+            <input type="checkbox" id="rawToggle" />
+            <span class="switch-track"></span>
+          </span>
+        </label>
+      </div>
+      <pre id="resultBox" style="display:none;"><span class="empty-state">No request made yet.</span></pre>
     </div>
 
     <footer>Local dev tester · calls <a href="/api/platforms" target="_blank">/api/platforms</a> and <a href="/api/health" target="_blank">/api/health</a></footer>
@@ -303,6 +455,11 @@
   const fetchBtn = document.getElementById("fetchBtn");
   const endpointLine = document.getElementById("endpointLine");
   const resultBox = document.getElementById("resultBox");
+  const rawToggle = document.getElementById("rawToggle");
+
+  rawToggle.addEventListener("change", () => {
+    resultBox.style.display = rawToggle.checked ? "block" : "none";
+  });
   const resultBadge = document.getElementById("resultBadge");
   const statusDot = document.getElementById("statusDot");
   const statusText = document.getElementById("statusText");
@@ -407,6 +564,162 @@
     }
   }
 
+  const mediaCards = document.getElementById("mediaCards");
+
+  const VIDEO_EXT = /\.(mp4|webm|mov|m4v)(\?|$)/i;
+  const AUDIO_EXT = /\.(mp3|m4a|aac|ogg|wav)(\?|$)/i;
+  const IMAGE_EXT = /\.(jpe?g|png|gif|webp)(\?|$)/i;
+
+  function classifyMedia(key, url) {
+    const k = String(key || "").toLowerCase();
+    if (VIDEO_EXT.test(url) || /video/.test(k)) return "video";
+    if (AUDIO_EXT.test(url) || /(audio|music|song)/.test(k)) return "audio";
+    if (IMAGE_EXT.test(url) || /(image|thumb|photo|cover)/.test(k)) return "image";
+    return "file";
+  }
+
+  // Walks the JSON result and collects every string that looks like a
+  // downloadable media URL, tagged with the key it was found under so we
+  // can guess its type (video/audio/image) for rendering.
+  function collectMediaUrls(node, keyHint, out) {
+    if (node == null) return;
+    if (typeof node === "string") {
+      if (/^https?:\/\/\S+$/i.test(node)) {
+        out.push({ key: keyHint || "media", url: node });
+      }
+      return;
+    }
+    if (Array.isArray(node)) {
+      node.forEach((item) => collectMediaUrls(item, keyHint, out));
+      return;
+    }
+    if (typeof node === "object") {
+      for (const [k, v] of Object.entries(node)) {
+        collectMediaUrls(v, k, out);
+      }
+    }
+  }
+
+  function renderMediaCards(data) {
+    mediaCards.innerHTML = "";
+
+    if (!data || !data.success || !data.result) {
+      mediaCards.innerHTML = '<div class="media-empty">No media to show.</div>';
+      return;
+    }
+
+    const found = [];
+    collectMediaUrls(data.result, null, found);
+
+    // De-dupe by URL — many platforms repeat the same link under a couple of keys.
+    const seen = new Set();
+    const unique = found.filter((f) => {
+      if (seen.has(f.url)) return false;
+      seen.add(f.url);
+      return true;
+    });
+
+    if (!unique.length) {
+      mediaCards.innerHTML = '<div class="media-empty">No downloadable links found in this response.</div>';
+      return;
+    }
+
+    const grid = document.createElement("div");
+    grid.className = "media-grid";
+
+    unique.forEach((item, i) => {
+      const type = classifyMedia(item.key, item.url);
+      const card = document.createElement("div");
+      card.className = "media-card";
+
+      let previewHtml = "";
+      if (type === "video") {
+        previewHtml = `<video src="${item.url}" controls preload="metadata"></video>`;
+      } else if (type === "audio") {
+        previewHtml = `<audio src="${item.url}" controls></audio>`;
+      } else if (type === "image") {
+        previewHtml = `<img src="${item.url}" loading="lazy" alt="${item.key}" />`;
+      }
+
+      // Base filename only — the server determines the *real* extension from
+      // the actual Content-Type it gets back, since URLs (e.g. YouTube's
+      // googlevideo.com links) often carry no extension at all.
+      const filenameBase = (data.platform || "media") + "-" + (i + 1);
+      const proxyUrl = `/api/fetch-media?url=${encodeURIComponent(item.url)}&filename=${encodeURIComponent(filenameBase)}`;
+
+      const cardId = `media-card-${i}`;
+      card.id = cardId;
+      card.innerHTML = `
+        ${previewHtml}
+        <div class="media-card-body">
+          <div class="media-card-label">${item.key} · ${type}</div>
+          <button type="button" class="media-download-btn" data-proxy-url="${proxyUrl}">⬇ Download</button>
+          <div class="media-download-status" style="display:none;"></div>
+        </div>
+      `;
+      grid.appendChild(card);
+    });
+
+    mediaCards.appendChild(grid);
+
+    // JS-driven download instead of a plain <a download> link: a bare link
+    // can't tell the difference between a real file and an upstream error
+    // page — it just saves whatever bytes come back. Fetching first lets us
+    // check the response actually succeeded, use the server's real filename
+    // (correct extension), and show a clear error instead of silently
+    // handing over a broken file.
+    mediaCards.querySelectorAll(".media-download-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const proxyUrl = btn.dataset.proxyUrl;
+        const statusEl = btn.nextElementSibling;
+        const originalLabel = btn.textContent;
+
+        btn.disabled = true;
+        btn.textContent = "Downloading…";
+        statusEl.style.display = "none";
+
+        try {
+          const res = await fetch(proxyUrl);
+          if (!res.ok) {
+            let message = `Download failed (${res.status})`;
+            try {
+              const errBody = await res.json();
+              if (errBody?.message) message = errBody.message;
+            } catch {
+              // response wasn't JSON — keep the generic message
+            }
+            throw new Error(message);
+          }
+
+          const disposition = res.headers.get("content-disposition") || "";
+          const nameMatch = disposition.match(/filename="([^"]+)"/);
+          const filename = nameMatch ? nameMatch[1] : "download";
+
+          const blob = await res.blob();
+          const objectUrl = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = objectUrl;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(objectUrl);
+
+          btn.textContent = "✔ Saved";
+          setTimeout(() => {
+            btn.textContent = originalLabel;
+            btn.disabled = false;
+          }, 1500);
+        } catch (err) {
+          statusEl.textContent = String(err.message || err);
+          statusEl.style.display = "block";
+          btn.textContent = originalLabel;
+          btn.disabled = false;
+        }
+      });
+    });
+  }
+
   async function runFetch() {
     const key = platformSelect.value;
     const cfg = platforms[key];
@@ -434,11 +747,13 @@
       resultBadge.className = "badge " + (data.success ? "ok" : "err");
 
       resultBox.textContent = JSON.stringify(data, null, 2);
+      renderMediaCards(data);
     } catch (err) {
       resultBadge.style.display = "inline-block";
       resultBadge.textContent = "network error";
       resultBadge.className = "badge err";
       resultBox.textContent = String(err);
+      mediaCards.innerHTML = "";
     } finally {
       fetchBtn.disabled = false;
       fetchBtn.textContent = "Fetch";
