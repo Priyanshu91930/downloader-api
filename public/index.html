@@ -284,6 +284,10 @@
     max-width: calc(100% - 24px);
   }
 
+  .media-preview:empty {
+    display: none;
+  }
+
   .media-card-body {
     padding: 10px 12px 12px;
     display: flex;
@@ -291,11 +295,33 @@
     gap: 8px;
   }
 
+  .media-card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fg, #e6f2ec);
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
   .media-card-label {
     font-family: var(--mono);
     font-size: 11px;
     color: var(--muted);
     word-break: break-all;
+  }
+
+  .media-variant-select {
+    background: #0d1412;
+    color: var(--accent, #7be3b0);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    cursor: pointer;
   }
 
   .media-download-btn {
@@ -578,26 +604,177 @@
     return "file";
   }
 
-  // Walks the JSON result and collects every string that looks like a
-  // downloadable media URL, tagged with the key it was found under so we
-  // can guess its type (video/audio/image) for rendering.
-  function collectMediaUrls(node, keyHint, out) {
-    if (node == null) return;
+  function isUrlString(v) {
+    return typeof v === "string" && /^https?:\/\/\S+$/i.test(v);
+  }
+
+  function isThumbKey(k) {
+    return /thumb|cover|poster/i.test(String(k || ""));
+  }
+
+  // Collects {key, url, isThumb} pairs from an item-shaped object, bounded to
+  // a shallow nesting depth (handles shapes like images.orig.url without
+  // wandering arbitrarily deep into unrelated structures).
+  function extractVariants(node, keyHint, depth, seen, out) {
+    if (node == null || depth > 3) return out;
     if (typeof node === "string") {
-      if (/^https?:\/\/\S+$/i.test(node)) {
-        out.push({ key: keyHint || "media", url: node });
+      if (isUrlString(node) && !seen.has(node)) {
+        seen.add(node);
+        out.push({ key: keyHint || "media", url: node, isThumb: isThumbKey(keyHint) });
       }
-      return;
+      return out;
     }
     if (Array.isArray(node)) {
-      node.forEach((item) => collectMediaUrls(item, keyHint, out));
-      return;
+      node.forEach((v) => extractVariants(v, keyHint, depth + 1, seen, out));
+      return out;
     }
     if (typeof node === "object") {
       for (const [k, v] of Object.entries(node)) {
-        collectMediaUrls(v, k, out);
+        extractVariants(v, k, depth + 1, seen, out);
       }
     }
+    return out;
+  }
+
+  function getVariants(obj) {
+    return extractVariants(obj, null, 0, new Set(), []);
+  }
+
+  // Some platforms (search results, Pinterest boards) wrap a list of
+  // distinct results under a field like `data`/`results`/`items` rather than
+  // returning the array directly. Detect that shape so each result renders
+  // as its own card instead of every URL in the tree getting flattened
+  // together into one jumbled grid.
+  function findListField(resultObj) {
+    for (const [k, v] of Object.entries(resultObj)) {
+      if (Array.isArray(v) && v.length && v.every((el) => el && typeof el === "object" && !Array.isArray(el))) {
+        const withVariants = v.filter((el) => getVariants(el).length > 0);
+        if (withVariants.length >= Math.ceil(v.length / 2)) {
+          return { key: k, list: v };
+        }
+      }
+    }
+    return null;
+  }
+
+  // Builds one renderable "item" out of a result object: a title (if any),
+  // a thumbnail pulled out separately from the downloadable options, and the
+  // remaining URLs as quality/format variants. A single video with
+  // hd/sd/audio links becomes ONE item with 3 variants (dropdown), not 3
+  // separate cards.
+  function buildItem(obj) {
+    const title = obj.title || obj.caption || obj.desc || obj.description || obj.name || null;
+    const allVariants = getVariants(obj);
+    const thumbVariant = allVariants.find((v) => v.isThumb) || null;
+    const downloadVariants = allVariants.filter((v) => v !== thumbVariant);
+    const variants = downloadVariants.length ? downloadVariants : allVariants;
+    return { title, thumbnail: thumbVariant ? thumbVariant.url : null, variants };
+  }
+
+  // Top-level classification: is this response ONE item (optionally with
+  // multiple quality variants), or a LIST of distinct items (YouTube/Pinterest
+  // search-style results)? Both cases previously got flattened into the same
+  // grid, which is what was breaking on those platforms.
+  function analyzeResult(result) {
+    if (Array.isArray(result)) {
+      return { mode: "list", items: result.map((r) => buildItem(r)) };
+    }
+    if (result && typeof result === "object") {
+      const listField = findListField(result);
+      if (listField) {
+        return { mode: "list", items: listField.list.map((r) => buildItem(r)) };
+      }
+      return { mode: "single", items: [buildItem(result)] };
+    }
+    return { mode: "single", items: [] };
+  }
+
+  function buildProxyUrl(platform, index, url) {
+    const filenameBase = (platform || "media") + "-" + (index + 1);
+    return `/api/fetch-media?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filenameBase)}`;
+  }
+
+  function buildPreviewHtml(type, url, altText) {
+    if (type === "video") return `<video src="${url}" controls preload="metadata"></video>`;
+    if (type === "audio") return `<audio src="${url}" controls></audio>`;
+    if (type === "image") return `<img src="${url}" loading="lazy" alt="${altText}" />`;
+    return "";
+  }
+
+  function renderItemCard(item, index, platform) {
+    const card = document.createElement("div");
+    card.className = "media-card";
+
+    const hasVariants = item.variants.length > 1;
+    const activeVariant = item.variants[0] || null;
+    const type = activeVariant ? classifyMedia(activeVariant.key, activeVariant.url) : "file";
+
+    // If we have a real thumbnail, that's a stable preview regardless of
+    // which quality/format variant gets picked below. Otherwise the preview
+    // IS the currently-selected variant, so it needs to update when the
+    // dropdown changes — wrapped in its own container so we can swap it.
+    const usesFixedThumbnail = Boolean(item.thumbnail && type !== "image");
+    const initialPreview = usesFixedThumbnail
+      ? `<img src="${item.thumbnail}" loading="lazy" alt="${item.title || "thumbnail"}" />`
+      : activeVariant
+        ? buildPreviewHtml(type, activeVariant.url, item.title || "media")
+        : "";
+
+    const selectHtml = hasVariants
+      ? `<select class="media-variant-select">
+          ${item.variants
+            .map(
+              (v, i) =>
+                `<option value="${i}">${v.key}${v.key !== classifyMedia(v.key, v.url) ? " · " + classifyMedia(v.key, v.url) : ""}</option>`
+            )
+            .join("")}
+        </select>`
+      : "";
+
+    const titleHtml = item.title ? `<div class="media-card-title">${item.title}</div>` : "";
+
+    card.innerHTML = `
+      <div class="media-preview">${initialPreview}</div>
+      <div class="media-card-body">
+        ${titleHtml}
+        <div class="media-card-label">${activeVariant ? activeVariant.key : "no media"} · ${type}</div>
+        ${selectHtml}
+        <button type="button" class="media-download-btn">⬇ Download</button>
+        <div class="media-download-status" style="display:none;"></div>
+      </div>
+    `;
+
+    if (!item.variants.length) {
+      const btn = card.querySelector(".media-download-btn");
+      btn.disabled = true;
+      btn.textContent = "No downloadable link";
+      return card;
+    }
+
+    const select = card.querySelector(".media-variant-select");
+    const btn = card.querySelector(".media-download-btn");
+    const label = card.querySelector(".media-card-label");
+    const previewContainer = card.querySelector(".media-preview");
+    btn.dataset.proxyUrl = buildProxyUrl(platform, index, activeVariant.url);
+
+    if (select) {
+      select.addEventListener("change", () => {
+        const chosen = item.variants[Number(select.value)];
+        const chosenType = classifyMedia(chosen.key, chosen.url);
+
+        btn.dataset.proxyUrl = buildProxyUrl(platform, index, chosen.url);
+        label.textContent = `${chosen.key} · ${chosenType}`;
+
+        // Only swap the live preview if it isn't pinned to a fixed thumbnail —
+        // switching HD/SD/audio should actually reflect what you're about to
+        // download, not silently keep showing whatever loaded first.
+        if (!usesFixedThumbnail) {
+          previewContainer.innerHTML = buildPreviewHtml(chosenType, chosen.url, item.title || "media");
+        }
+      });
+    }
+
+    return card;
   }
 
   function renderMediaCards(data) {
@@ -608,18 +785,9 @@
       return;
     }
 
-    const found = [];
-    collectMediaUrls(data.result, null, found);
+    const { items } = analyzeResult(data.result);
 
-    // De-dupe by URL — many platforms repeat the same link under a couple of keys.
-    const seen = new Set();
-    const unique = found.filter((f) => {
-      if (seen.has(f.url)) return false;
-      seen.add(f.url);
-      return true;
-    });
-
-    if (!unique.length) {
+    if (!items.length || items.every((item) => !item.variants.length)) {
       mediaCards.innerHTML = '<div class="media-empty">No downloadable links found in this response.</div>';
       return;
     }
@@ -627,37 +795,8 @@
     const grid = document.createElement("div");
     grid.className = "media-grid";
 
-    unique.forEach((item, i) => {
-      const type = classifyMedia(item.key, item.url);
-      const card = document.createElement("div");
-      card.className = "media-card";
-
-      let previewHtml = "";
-      if (type === "video") {
-        previewHtml = `<video src="${item.url}" controls preload="metadata"></video>`;
-      } else if (type === "audio") {
-        previewHtml = `<audio src="${item.url}" controls></audio>`;
-      } else if (type === "image") {
-        previewHtml = `<img src="${item.url}" loading="lazy" alt="${item.key}" />`;
-      }
-
-      // Base filename only — the server determines the *real* extension from
-      // the actual Content-Type it gets back, since URLs (e.g. YouTube's
-      // googlevideo.com links) often carry no extension at all.
-      const filenameBase = (data.platform || "media") + "-" + (i + 1);
-      const proxyUrl = `/api/fetch-media?url=${encodeURIComponent(item.url)}&filename=${encodeURIComponent(filenameBase)}`;
-
-      const cardId = `media-card-${i}`;
-      card.id = cardId;
-      card.innerHTML = `
-        ${previewHtml}
-        <div class="media-card-body">
-          <div class="media-card-label">${item.key} · ${type}</div>
-          <button type="button" class="media-download-btn" data-proxy-url="${proxyUrl}">⬇ Download</button>
-          <div class="media-download-status" style="display:none;"></div>
-        </div>
-      `;
-      grid.appendChild(card);
+    items.forEach((item, i) => {
+      grid.appendChild(renderItemCard(item, i, data.platform));
     });
 
     mediaCards.appendChild(grid);
