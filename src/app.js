@@ -7,10 +7,17 @@ const rateLimit = require("express-rate-limit");
 
 const downloaderRoutes = require("./routes/downloader");
 const { notFound, errorHandler } = require("./middleware/errorHandler");
+const requestLogger = require("./middleware/requestLogger");
+const requestTimeout = require("./middleware/requestTimeout");
+const securityHeaders = require("./middleware/securityHeaders");
 
 const app = express();
+app.disable("x-powered-by");
 
 // --- Core middleware ---
+app.use(requestLogger);
+app.use(requestTimeout());
+app.use(securityHeaders);
 app.use(cors({ origin: process.env.CORS_ORIGIN || "*" }));
 app.use(express.json());
 
@@ -25,7 +32,16 @@ const limiter = rateLimit({
 app.use("/api", limiter);
 
 // --- Static frontend (simple endpoint tester) ---
-app.use(express.static(path.join(__dirname, "..", "public")));
+// Short maxAge so active development picks up changes reasonably fast,
+// while repeat visits within that window skip a full re-fetch. etag stays
+// on (express.static default) so a change is still picked up immediately
+// even within the cache window via a 304 revalidation.
+app.use(
+  express.static(path.join(__dirname, "..", "public"), {
+    maxAge: "1h",
+    etag: true,
+  })
+);
 
 // --- Health check ---
 app.get("/api/health", (req, res) => {

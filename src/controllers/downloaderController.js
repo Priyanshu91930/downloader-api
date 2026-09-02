@@ -2,6 +2,8 @@ const { Readable } = require("stream");
 const btch = require("btch-downloader");
 const { PLATFORMS } = require("../config/platforms");
 const ApiError = require("../utils/ApiError");
+const { requireInputForQueryType, requireHttpUrl, requireNonEmptyString } = require("../utils/validate");
+const withTimeout = require("../utils/withTimeout");
 
 /*
  Official btch-downloader documentation & project links:
@@ -79,10 +81,11 @@ async function download(req, res) {
     throw new ApiError(404, `Unsupported platform "${platform}".`);
   }
 
-  if (!input || !input.trim()) {
-    const paramName = config.queryType === "query" ? "query" : "url";
+  const paramName = config.queryType === "query" ? "query" : "url";
+  if (input === undefined) {
     throw new ApiError(400, `Missing required "${paramName}" query parameter. Example: ${config.example}`);
   }
+  const rawQuery = requireInputForQueryType(input, config.queryType, paramName);
 
   const fn = btch[config.fn];
   if (typeof fn !== "function") {
@@ -94,7 +97,6 @@ async function download(req, res) {
   // Normalize a few common URL shapes so downstream downloaders (like YouTube)
   // receive the canonical form they expect and avoid confusing errors such as
   // "Invalid search API response" when callers pass a shorts/ or youtu.be link.
-  const rawQuery = input.trim();
   let normalizedQuery = rawQuery;
   // Only apply the YouTube normalizations when the platform is youtube or aio —
   // aio delegates to platform-specific downloaders and benefits from the same fix.
@@ -102,7 +104,19 @@ async function download(req, res) {
     normalizedQuery = normalizeInputForDownloader(rawQuery);
   }
 
-  const data = await fn(normalizedQuery);
+  const data = await withTimeout(
+    fn(normalizedQuery),
+    Number(process.env.DOWNLOAD_TIMEOUT_MS) || 25_000,
+    `The ${platform} downloader took too long to respond.`
+  ).catch((err) => {
+    // withTimeout's own rejection carries this exact message — anything
+    // else is a real error from the downloader itself and should keep
+    // its original message/shape.
+    if (err.message.endsWith("took too long to respond.")) {
+      throw new ApiError(504, err.message);
+    }
+    throw err;
+  });
 
   // btch-downloader sometimes returns an object containing an `error` property
   // or a `status: false` result instead of throwing. Map those to a consistent
@@ -182,19 +196,14 @@ function looksLikeFailurePayload(contentType) {
 async function fetchMedia(req, res) {
   const { url, filename } = req.query;
 
-  if (!url || !url.trim()) {
-    throw new ApiError(400, 'Missing required "url" query parameter.');
+  const parsedUrlString = requireHttpUrl(url, "url");
+  if (filename && filename.trim()) {
+    // Only validate when a real (non-empty) filename was actually given —
+    // this stays an optional field with a derived fallback, same as before.
+    requireNonEmptyString(filename, "filename", { maxLength: 255 });
   }
 
-  let parsed;
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new ApiError(400, "Invalid media URL.");
-  }
-  if (!/^https?:$/.test(parsed.protocol)) {
-    throw new ApiError(400, "Only http/https media URLs are supported.");
-  }
+  const parsed = new URL(parsedUrlString);
   if (isPrivateHostname(parsed.hostname)) {
     throw new ApiError(400, "Refusing to fetch a private/internal address.");
   }
@@ -204,14 +213,34 @@ async function fetchMedia(req, res) {
   // Without these, the CDN can respond 200 with a small HTML/JSON error body
   // instead of the media — which is exactly what was getting silently saved
   // as a "broken" file before.
-  const upstream = await fetch(parsed.toString(), {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-      Accept: "*/*",
-      Referer: `${parsed.protocol}//${parsed.host}/`,
-    },
-  });
+  //
+  // The abort timer only guards the connect + response-headers phase — it's
+  // cleared the moment headers actually arrive, so a legitimately large file
+  // that's slow-but-successfully streaming isn't killed partway through by
+  // an arbitrary total-transfer cutoff.
+  const controller = new AbortController();
+  const connectTimeoutMs = Number(process.env.FETCH_MEDIA_TIMEOUT_MS) || 20_000;
+  const timeoutTimer = setTimeout(() => controller.abort(), connectTimeoutMs);
+
+  let upstream;
+  try {
+    upstream = await fetch(parsed.toString(), {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        Accept: "*/*",
+        Referer: `${parsed.protocol}//${parsed.host}/`,
+      },
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err.name === "AbortError") {
+      throw new ApiError(504, "Upstream media host took too long to respond.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutTimer);
+  }
 
   if (!upstream.ok || !upstream.body) {
     throw new ApiError(502, `Upstream media host returned ${upstream.status}.`);
