@@ -4,7 +4,7 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/node-%3E%3D20-339933?logo=node.js&logoColor=white" alt="Node >=20">
   <img src="https://img.shields.io/badge/express-4.x-000000?logo=express&logoColor=white" alt="Express 4.x">
-  <img src="https://img.shields.io/badge/platforms-17-blueviolet" alt="17 supported platforms">
+  <img src="https://img.shields.io/badge/platforms-20-blueviolet" alt="20 supported platforms">
   <img src="https://img.shields.io/badge/deploy-Railway%20%7C%20Render%20%7C%20Vercel%20%7C%20Docker-informational" alt="Deploy targets">
 </p>
 
@@ -12,7 +12,9 @@
 
 A small, well-structured REST API that wraps the [`btch-downloader`](https://www.npmjs.com/package/btch-downloader) library, plus a built-in browser page for testing every endpoint without needing Postman.
 
-Fetch public media info/download links from TikTok, Instagram, YouTube, Spotify, Pinterest, SoundCloud, Facebook, Twitter/X, Google Drive, MediaFire, CapCut, Douyin, Xiaohongshu, SnackVideo, and Cocofun — plus an `aio` endpoint that auto-detects the platform from the URL — all through one consistent JSON API.
+Fetch public media info/download links from TikTok, Instagram, YouTube, Spotify, Pinterest, SoundCloud, Facebook, Twitter/X, Google Drive, MediaFire, CapCut, Douyin, Xiaohongshu (posts and profiles), SnackVideo, Cocofun, Threads, and Kuaishou — plus an `aio` endpoint that auto-detects the platform from the URL — all through one consistent JSON API.
+
+> **Note:** `aio` and `mediafire` are marked "no longer maintained" in the upstream `btch-downloader` library as of v6. They're still wired up here and may keep working, but treat them as the first candidates to fail on a future dependency bump — prefer a specific platform key over `aio` where you can.
 
 
 **External resources (official btch-downloader project)**
@@ -165,25 +167,28 @@ Streams a direct media URL (one returned inside a `/api/download` result) back t
 
 ### Supported platform keys
 
-| Key              | Source library function | Input type       |
-| ----------------- | ------------------------ | ----------------- |
-| `aio`               | `aio`                     | url (auto-detects platform) |
-| `tiktok`           | `ttdl`                    | url                |
-| `instagram`        | `igdl`                    | url                |
-| `facebook`         | `fbdown`                  | url                |
-| `twitter`          | `twitter`                 | url                |
-| `youtube`          | `youtube`                 | url                |
-| `youtube-search`   | `yts`                     | query              |
-| `spotify`          | `spotify`                 | url                |
-| `soundcloud`       | `soundcloud`              | url                |
-| `pinterest`        | `pinterest`               | url or search term |
-| `mediafire`        | `mediafire`               | url                |
-| `gdrive`           | `gdrive`                  | url                |
-| `capcut`           | `capcut`                  | url                |
-| `douyin`           | `douyin`                  | url                |
-| `xiaohongshu`      | `xiaohongshu`             | url                |
-| `snackvideo`       | `snackvideo`              | url                |
-| `cocofun`          | `cocofun`                 | url                |
+| Key                  | Source library function | Input type       |
+| -------------------- | ------------------------ | ----------------- |
+| `aio` ⚠️ deprecated upstream | `aio`              | url (auto-detects platform) |
+| `tiktok`             | `ttdl`                    | url                |
+| `instagram`          | `igdl`                    | url                |
+| `facebook`           | `fbdown`                  | url                |
+| `twitter`            | `twitter`                 | url                |
+| `youtube`            | `youtube`                 | url                |
+| `youtube-search`     | `yts`                     | query              |
+| `spotify`            | `spotify`                 | url                |
+| `soundcloud`         | `soundcloud`              | url                |
+| `pinterest`          | `pinterest`               | url or search term |
+| `mediafire` ⚠️ deprecated upstream | `mediafire`  | url                |
+| `gdrive`             | `gdrive`                  | url                |
+| `capcut`             | `capcut`                  | url                |
+| `douyin`             | `douyin`                  | url                |
+| `xiaohongshu`        | `xiaohongshu`             | url                |
+| `xiaohongshu-profile`| `xiaohongshuProfile`      | url                |
+| `snackvideo`         | `snackvideo`              | url                |
+| `cocofun`            | `cocofun`                 | url                |
+| `threads`            | `threads`                 | url                |
+| `kuaishou`           | `kuaishou`                | url                |
 
 ---
 
