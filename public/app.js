@@ -72,7 +72,10 @@ const platformSelect = document.getElementById("platform");
 
   let platforms = {};
 
-  // Ordered so a more specific host match wins before a looser one.
+  // Ordered so a more specific host match wins before a looser one — the
+  // xiaohongshu profile check in particular must come before the generic
+  // xiaohongshu.com pattern, or every profile link would misdetect as a
+  // regular post/video link.
   const DETECT_PATTERNS = [
     [/tiktok\.com/i, "tiktok"],
     [/instagram\.com/i, "instagram"],
@@ -86,9 +89,12 @@ const platformSelect = document.getElementById("platform");
     [/drive\.google\.com/i, "gdrive"],
     [/capcut\.com/i, "capcut"],
     [/douyin\.com/i, "douyin"],
+    [/xiaohongshu\.com\/user\/profile\//i, "xiaohongshu-profile"],
     [/(xiaohongshu\.com|xhslink\.com)/i, "xiaohongshu"],
     [/snackvideo\.com/i, "snackvideo"],
     [/(icocofun\.com|cocofun\.com)/i, "cocofun"],
+    [/threads\.(com|net)/i, "threads"],
+    [/(kuaishou\.com|v\.kuaishou\.com)/i, "kuaishou"],
   ];
 
   function detectPlatform(value) {
@@ -123,7 +129,10 @@ const platformSelect = document.getElementById("platform");
     const p = paramName(cfg.queryType);
     inputLabel.textContent = cfg.queryType === "url_or_query" ? "Url or search query" : p === "query" ? "Search query" : "Url";
     inputEl.placeholder = cfg.example;
-    exampleText.textContent = "e.g. " + cfg.example;
+    // Surface the upstream "no longer maintained" status (see PLATFORMS in
+    // src/config/platforms.js) directly in the tester so it isn't a surprise
+    // when a deprecated platform's requests start failing.
+    exampleText.textContent = (cfg.deprecated ? "⚠ deprecated upstream — " : "") + "e.g. " + cfg.example;
     updateEndpointLine();
   }
 
