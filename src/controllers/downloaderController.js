@@ -46,6 +46,7 @@ function listPlatforms(req, res) {
       queryType: value.queryType,
       example: value.example,
       ...(value.note ? { note: value.note } : {}),
+      ...(value.deprecated ? { deprecated: true } : {}),
     }));
   res.json({ success: true, count: platforms.length, platforms });
 }
