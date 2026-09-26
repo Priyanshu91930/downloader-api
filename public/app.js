@@ -210,8 +210,17 @@ const platformSelect = document.getElementById("platform");
   // Collects {key, url, isThumb} pairs from an item-shaped object, bounded to
   // a shallow nesting depth (handles shapes like images.orig.url without
   // wandering arbitrarily deep into unrelated structures).
+  // Bounded so this never wanders arbitrarily deep into unrelated structures
+  // — but real btch-downloader responses nest up to 3 levels of wrapper
+  // objects (result.result.result...) before reaching an item's actual
+  // fields, so the limit needs real headroom past that or it silently finds
+  // nothing (confirmed: this cut off Pinterest search and Douyin's link
+  // list entirely). This generic path is now only a fallback for platforms
+  // without a dedicated normalizeResult.js handler on the backend — see
+  // that file for the real per-platform fix.
+  const MAX_EXTRACT_DEPTH = 7;
   function extractVariants(node, keyHint, depth, seen, out) {
-    if (node == null || depth > 3) return out;
+    if (node == null || depth > MAX_EXTRACT_DEPTH) return out;
     if (typeof node === "string") {
       if (isUrlString(node) && !seen.has(node)) {
         seen.add(node);
@@ -376,8 +385,19 @@ const platformSelect = document.getElementById("platform");
 
     if (!item.variants.length) {
       const btn = card.querySelector(".media-download-btn");
-      btn.disabled = true;
-      btn.textContent = "No downloadable link";
+      if (item.openUrl) {
+        // A search-hit-style item (e.g. YouTube search results) — the URL
+        // is a source page to open/re-download, not a file this server can
+        // stream, so this must NOT keep the "media-download-btn" class or
+        // the click-to-download wiring in renderMediaCards below would try
+        // to fetch() this as if it were a real download and fail.
+        btn.textContent = "Open ↗";
+        btn.classList.remove("media-download-btn");
+        btn.addEventListener("click", () => window.open(item.openUrl, "_blank", "noopener,noreferrer"));
+      } else {
+        btn.disabled = true;
+        btn.textContent = "No downloadable link";
+      }
       return card;
     }
 
@@ -406,6 +426,36 @@ const platformSelect = document.getElementById("platform");
     return card;
   }
 
+  // Adapts the backend's per-platform `normalized` shape (see
+  // src/utils/normalizeResult.js) into the same {title, thumbnail, variants}
+  // item shape renderItemCard already knows how to draw — so a verified
+  // platform reuses all the existing rendering/download-proxy code, it just
+  // skips the generic guesswork in analyzeResult/buildItem entirely.
+  function itemsFromNormalized(norm) {
+    if (norm.kind === "media") {
+      return [
+        {
+          title: norm.title,
+          thumbnail: norm.thumbnail,
+          variants: norm.media.map((m) => ({ key: m.label, url: m.url, type: m.type })),
+        },
+      ];
+    }
+    if (norm.kind === "list") {
+      return norm.items.map((it) => ({
+        title: it.title,
+        thumbnail: it.thumbnail,
+        // A non-downloadable item (e.g. a YouTube search hit's watch-page
+        // link) gets no variant — renderItemCard shows an "Open" link
+        // instead via openUrl, rather than a misleading download button
+        // that would just fetch an HTML page.
+        variants: it.downloadable ? [{ key: it.meta || "Download", url: it.url, type: it.type }] : [],
+        openUrl: it.downloadable ? null : it.url,
+      }));
+    }
+    return null;
+  }
+
   function renderMediaCards(data) {
     mediaCards.innerHTML = "";
 
@@ -414,9 +464,9 @@ const platformSelect = document.getElementById("platform");
       return;
     }
 
-    const { items } = analyzeResult(data.result);
+    const items = (data.normalized && itemsFromNormalized(data.normalized)) || analyzeResult(data.result).items;
 
-    if (!items.length || items.every((item) => !item.variants.length)) {
+    if (!items.length || items.every((item) => !item.variants.length && !item.openUrl)) {
       mediaCards.innerHTML = '<div class="media-empty">No downloadable links found in this response.</div>';
       return;
     }
