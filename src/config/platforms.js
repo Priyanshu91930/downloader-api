@@ -26,10 +26,10 @@ const PLATFORMS = {
   facebook: { fn: "fbdown", queryType: "url", example: "https://www.facebook.com/watch/?v=1234567890" },
   twitter: { fn: "twitter", queryType: "url", example: "https://twitter.com/user/status/1234567890" },
   youtube: { fn: "youtube", queryType: "url", example: "https://youtu.be/xxxxxxxxxxx" },
-  "youtube-search": { fn: "yts", queryType: "query", example: "Somewhere Only We Know" },
+  "youtube-search": { fn: "yts", queryType: "query", example: "Somewhere Only We Know", supportsLimit: true },
   spotify: { fn: "spotify", queryType: "url", example: "https://open.spotify.com/track/xxxxxxxxxxxxxxxxxxxxxx" },
   soundcloud: { fn: "soundcloud", queryType: "url", example: "https://soundcloud.com/artist/track-name" },
-  pinterest: { fn: "pinterest", queryType: "url_or_query", example: "https://pin.it/xxxxxxx (or a search term)" },
+  pinterest: { fn: "pinterest", queryType: "url_or_query", example: "https://pin.it/xxxxxxx (or a search term)", supportsLimit: true },
   // "mediafire" is also marked "no longer maintained" upstream as of v6 —
   // still wired up (it may keep working for a while), but expect it to be
   // the first thing to break on a future btch-downloader upgrade.

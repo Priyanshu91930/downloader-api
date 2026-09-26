@@ -4,7 +4,21 @@ const { PLATFORMS } = require("../config/platforms");
 const ApiError = require("../utils/ApiError");
 const { requireInputForQueryType, requireHttpUrl, requireNonEmptyString } = require("../utils/validate");
 const withTimeout = require("../utils/withTimeout");
-const { normalizeResult } = require("../utils/normalizeResult");
+const { normalizeResult, truncateListResult } = require("../utils/normalizeResult");
+
+// Applies to platforms with `supportsLimit: true` (youtube-search, pinterest
+// search) — these can return dozens of hits per query, most of which nobody
+// asked for. Defaults to a small, sane page size and caps how high a caller
+// can push it, rather than shipping (and letting the client render) an
+// unbounded list on every request.
+const LIST_LIMIT_DEFAULT = 5;
+const LIST_LIMIT_MAX = 50;
+
+function parseLimit(rawLimit) {
+  const n = Number.parseInt(rawLimit, 10);
+  if (!Number.isFinite(n) || n < 1) return LIST_LIMIT_DEFAULT;
+  return Math.min(n, LIST_LIMIT_MAX);
+}
 
 /*
  Official btch-downloader documentation & project links:
@@ -48,6 +62,7 @@ function listPlatforms(req, res) {
       example: value.example,
       ...(value.note ? { note: value.note } : {}),
       ...(value.deprecated ? { deprecated: true } : {}),
+      ...(value.supportsLimit ? { supportsLimit: true } : {}),
     }));
   res.json({ success: true, count: platforms.length, platforms });
 }
@@ -131,16 +146,27 @@ async function download(req, res) {
     throw new ApiError(502, message);
   }
 
-  // `result` stays exactly what the library returned (raw toggle / API
-  // consumers depend on that). `normalized` is a best-effort, consistent
-  // {kind, ...} view built from real per-platform shapes — see
-  // src/utils/normalizeResult.js. It's `null` for platforms without a
-  // dedicated handler (yet) or if normalization finds nothing usable; the
-  // frontend falls back to its generic parser in that case.
+  // For list-shaped platforms (search results), trim to `limit` (default 5,
+  // capped at 50, via ?limit=) before it's ever normalized or sent back — so
+  // the raw JSON and the normalized view agree, and a query that could
+  // return dozens of hits doesn't ship (and force the client to render) all
+  // of them by default.
+  const appliedLimit = config.supportsLimit ? parseLimit(req.query.limit) : null;
+  if (appliedLimit !== null) {
+    truncateListResult(platform, data, appliedLimit);
+  }
+
   res.json({
     success: true,
     platform,
     query: rawQuery,
+    ...(appliedLimit !== null ? { limit: appliedLimit } : {}),
+    // `result` stays exactly what the library returned (raw toggle / direct
+    // API callers depend on that, aside from the ?limit= trim above).
+    // `normalized` is a best-effort, consistent {kind, ...} view built from
+    // real per-platform shapes (src/utils/normalizeResult.js) — null for
+    // platforms without a handler yet, or if nothing usable was found; the
+    // frontend falls back to its generic parser in that case.
     result: data,
     normalized: normalizeResult(platform, data),
   });

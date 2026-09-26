@@ -282,4 +282,33 @@ function normalizeResult(platform, raw) {
   return out;
 }
 
-module.exports = { normalizeResult, guessMediaType };
+/**
+ * Trims a list-shaped platform's raw response IN PLACE to `limit` entries,
+ * before normalizeResult ever sees it — so the raw JSON (what the "raw"
+ * toggle shows, and what any direct API caller gets back) and the
+ * `normalized` view both reflect the same, already-trimmed list. No-op for
+ * every other shape (including Pinterest's *single-pin* response, which has
+ * no list to trim).
+ */
+function truncateListResult(platform, data, limit) {
+  if (!data || typeof data !== "object" || !Number.isFinite(limit)) return data;
+
+  if (platform === "youtube-search") {
+    const inner = data.result;
+    if (inner && typeof inner === "object") {
+      if (Array.isArray(inner.all)) inner.all = inner.all.slice(0, limit);
+      if (Array.isArray(inner.videos)) inner.videos = inner.videos.slice(0, limit);
+    }
+  } else if (platform === "pinterest") {
+    const searchPayload = data.result && data.result.result;
+    if (searchPayload && Array.isArray(searchPayload.result)) {
+      searchPayload.result = searchPayload.result.slice(0, limit);
+      if (typeof searchPayload.count === "number") searchPayload.count = Math.min(searchPayload.count, limit);
+    }
+    // Single-pin shape (searchPayload has no .result array) is left untouched.
+  }
+
+  return data;
+}
+
+module.exports = { normalizeResult, guessMediaType, truncateListResult };
