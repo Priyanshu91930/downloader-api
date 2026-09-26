@@ -120,15 +120,16 @@ Simple liveness check.
 
 ### `GET /api/platforms`
 
-Lists every supported platform, its expected query type, and an example input. The frontend uses this to build its dropdown.
+Lists every supported platform, its expected query type, and an example input. The frontend uses this to build its dropdown. Platforms that support pagination (see `?limit=` below) carry `"supportsLimit": true`; platforms the upstream library marks "no longer maintained" carry `"deprecated": true`.
 
 ```json
 {
   "success": true,
-  "count": 17,
+  "count": 20,
   "platforms": [
     { "key": "tiktok", "queryType": "url", "example": "https://www.tiktok.com/@user/video/1234567890" },
-    { "key": "youtube-search", "queryType": "query", "example": "Somewhere Only We Know" }
+    { "key": "youtube-search", "queryType": "query", "example": "Somewhere Only We Know", "supportsLimit": true },
+    { "key": "aio", "queryType": "url", "example": "https://www.tiktok.com/@user/video/1234567890", "deprecated": true }
   ]
 }
 ```
@@ -136,6 +137,8 @@ Lists every supported platform, its expected query type, and an example input. T
 ### `GET /api/download/:platform?url=...`
 
 Fetches media info/download links for the given platform. Most platforms expect a `url` query param; search-based platforms (like YouTube Search) expect `query` instead — check `queryType` from `/api/platforms`.
+
+For platforms with `supportsLimit: true` (`youtube-search`, `pinterest` when used as a search), an optional `?limit=` caps how many results come back — default `5`, max `50`, silently falls back to the default on anything non-numeric or below `1`.
 
 **Example**
 
@@ -148,7 +151,33 @@ GET /api/download/tiktok?url=https://www.tiktok.com/@user/video/1234567890
   "success": true,
   "platform": "tiktok",
   "query": "https://www.tiktok.com/@user/video/1234567890",
-  "result": { "...": "raw response from btch-downloader" }
+  "result": { "...": "raw response from btch-downloader" },
+  "normalized": {
+    "kind": "media",
+    "title": "...",
+    "thumbnail": "...",
+    "author": null,
+    "media": [{ "label": "Video (no watermark)", "type": "video", "url": "..." }]
+  }
+}
+```
+
+`normalized` is a consistent, per-platform-verified view built from the raw `result` (see `src/utils/normalizeResult.js`) — either `{ kind: "media", media: [...] }` for a single item, `{ kind: "list", items: [...] }` for search-style results, or `null` for a platform without a dedicated handler yet (the raw `result` is always present regardless).
+
+**Example with a limit**
+
+```
+GET /api/download/youtube-search?query=lofi+hip+hop&limit=3
+```
+
+```json
+{
+  "success": true,
+  "platform": "youtube-search",
+  "query": "lofi hip hop",
+  "limit": 3,
+  "result": { "...": "raw response, already trimmed to 3 entries" },
+  "normalized": { "kind": "list", "items": [ "...", "...", "..." ] }
 }
 ```
 
