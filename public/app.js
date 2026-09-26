@@ -23,7 +23,7 @@ function safeStringify(value, indent = 2) {
   }
 }
 
-const platformSelect = document.getElementById("platform");
+  const platformSelect = document.getElementById("platform");
   const inputEl = document.getElementById("input");
   const inputLabel = document.getElementById("inputLabel");
   const exampleText = document.getElementById("exampleText");
@@ -32,6 +32,8 @@ const platformSelect = document.getElementById("platform");
   const resultBox = document.getElementById("resultBox");
   const rawToggle = document.getElementById("rawToggle");
   const copyResponseBtn = document.getElementById("copyResponseBtn");
+  const limitField = document.getElementById("limitField");
+  const limitInput = document.getElementById("limitInput");
 
   rawToggle.addEventListener("change", () => {
     resultBox.style.display = rawToggle.checked ? "block" : "none";
@@ -133,6 +135,7 @@ const platformSelect = document.getElementById("platform");
     // src/config/platforms.js) directly in the tester so it isn't a surprise
     // when a deprecated platform's requests start failing.
     exampleText.textContent = (cfg.deprecated ? "⚠ deprecated upstream — " : "") + "e.g. " + cfg.example;
+    limitField.style.display = cfg.supportsLimit ? "block" : "none";
     updateEndpointLine();
   }
 
@@ -142,7 +145,12 @@ const platformSelect = document.getElementById("platform");
     if (!cfg) return;
     const p = paramName(cfg.queryType);
     const val = inputEl.value.trim() || `{${p}}`;
-    endpointLine.innerHTML = `<span class="method">GET</span> /api/download/${key}?${p}=${encodeURIComponent(val)}`;
+    let line = `<span class="method">GET</span> /api/download/${key}?${p}=${encodeURIComponent(val)}`;
+    if (cfg.supportsLimit) {
+      const limitVal = limitInput.value.trim();
+      if (limitVal) line += `&limit=${encodeURIComponent(limitVal)}`;
+    }
+    endpointLine.innerHTML = line;
   }
 
   async function loadPlatforms() {
@@ -567,7 +575,11 @@ const platformSelect = document.getElementById("platform");
     copyResponseBtn.disabled = true;
 
     const p = paramName(cfg.queryType);
-    const url = `/api/download/${key}?${p}=${encodeURIComponent(value)}`;
+    let url = `/api/download/${key}?${p}=${encodeURIComponent(value)}`;
+    if (cfg.supportsLimit) {
+      const limitVal = limitInput.value.trim();
+      if (limitVal) url += `&limit=${encodeURIComponent(limitVal)}`;
+    }
 
     try {
       const res = await fetch(url);
@@ -664,6 +676,7 @@ const platformSelect = document.getElementById("platform");
   });
 
   platformSelect.addEventListener("change", updateInputUI);
+  limitInput.addEventListener("input", updateEndpointLine);
   inputEl.addEventListener("input", () => {
     maybeAutoSelect();
     updateEndpointLine();

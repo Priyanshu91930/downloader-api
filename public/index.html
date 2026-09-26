@@ -521,6 +521,12 @@
         <p class="example" id="exampleText"></p>
       </div>
 
+      <div class="row" id="limitField" style="display:none;">
+        <label for="limitInput">Results limit</label>
+        <input id="limitInput" type="number" min="1" max="50" placeholder="5" />
+        <p class="example">Search-style results only (YouTube Search, Pinterest search) · default 5, max 50</p>
+      </div>
+
       <button id="fetchBtn">Fetch</button>
 
       <div class="endpoint-line" id="endpointLine"></div>
