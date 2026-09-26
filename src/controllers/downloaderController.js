@@ -4,6 +4,7 @@ const { PLATFORMS } = require("../config/platforms");
 const ApiError = require("../utils/ApiError");
 const { requireInputForQueryType, requireHttpUrl, requireNonEmptyString } = require("../utils/validate");
 const withTimeout = require("../utils/withTimeout");
+const { normalizeResult } = require("../utils/normalizeResult");
 
 /*
  Official btch-downloader documentation & project links:
@@ -130,11 +131,18 @@ async function download(req, res) {
     throw new ApiError(502, message);
   }
 
+  // `result` stays exactly what the library returned (raw toggle / API
+  // consumers depend on that). `normalized` is a best-effort, consistent
+  // {kind, ...} view built from real per-platform shapes — see
+  // src/utils/normalizeResult.js. It's `null` for platforms without a
+  // dedicated handler (yet) or if normalization finds nothing usable; the
+  // frontend falls back to its generic parser in that case.
   res.json({
     success: true,
     platform,
     query: rawQuery,
     result: data,
+    normalized: normalizeResult(platform, data),
   });
 }
 
