@@ -159,7 +159,6 @@ async function download(req, res) {
   const mustHaveMedia = hasHandler(platform) && !LIST_PLATFORMS.has(platform);
 
   let data = null;
-  let normalized = null;
   let lastError = null;
 
   for (const candidate of candidates) {
@@ -204,7 +203,6 @@ async function download(req, res) {
     }
 
     data = attempt;
-    normalized = attemptNormalized;
     lastError = null;
     break;
   }
@@ -235,7 +233,7 @@ async function download(req, res) {
     // platforms without a handler yet, or if nothing usable was found; the
     // frontend falls back to its generic parser in that case.
     result: data,
-    normalized: normalized || normalizeResult(platform, data),
+    normalized: normalizeResult(platform, data),
   });
 }
 
