@@ -23,6 +23,12 @@ function safeStringify(value, indent = 2) {
   }
 }
 
+  // Upstream titles/URLs are untrusted; escape before putting them in innerHTML.
+  function esc(v) {
+    return String(v == null ? "" : v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  const detectedText = document.getElementById("detectedText");
   const platformSelect = document.getElementById("platform");
   const inputEl = document.getElementById("input");
   const inputLabel = document.getElementById("inputLabel");
@@ -118,6 +124,7 @@ function safeStringify(value, indent = 2) {
       platformSelect.value = detected;
       updateInputUI();
     }
+    detectedText.innerHTML = detected ? `Detected <b>${esc(detected)}</b>` : "";
   }
 
   function paramName(queryType) {
@@ -160,7 +167,7 @@ function safeStringify(value, indent = 2) {
       platforms = Object.fromEntries(data.platforms.map((p) => [p.key, p]));
       const keys = Object.keys(platforms);
       platformSelect.innerHTML = keys
-        .map((key) => `<option value="${key}">${key}</option>`)
+        .map((key) => `<option value="${esc(key)}">${esc(key)}</option>`)
         .join("");
       // Ensure a sensible default is selected (first platform) so auto-detect can set correctly.
       if (!keys.includes(platformSelect.value)) platformSelect.value = keys[0] || "";
@@ -345,6 +352,7 @@ function safeStringify(value, indent = 2) {
   }
 
   function buildPreviewHtml(type, url, altText) {
+    url = esc(url); altText = esc(altText);
     if (type === "video") return `<video src="${url}" controls preload="metadata"></video>`;
     if (type === "audio") return `<audio src="${url}" controls></audio>`;
     if (type === "image") return `<img src="${url}" loading="lazy" alt="${altText}" />`;
@@ -365,7 +373,7 @@ function safeStringify(value, indent = 2) {
     // dropdown changes — wrapped in its own container so we can swap it.
     const usesFixedThumbnail = Boolean(item.thumbnail && type !== "image");
     const initialPreview = usesFixedThumbnail
-      ? `<img src="${item.thumbnail}" loading="lazy" alt="${item.title || "thumbnail"}" />`
+      ? `<img src="${esc(item.thumbnail)}" loading="lazy" alt="${esc(item.title || "thumbnail")}" />`
       : activeVariant
         ? buildPreviewHtml(type, activeVariant.url, item.title || "media")
         : "";
@@ -373,18 +381,18 @@ function safeStringify(value, indent = 2) {
     const selectHtml = hasVariants
       ? `<select class="media-variant-select">
           ${item.variants
-            .map((v, i) => `<option value="${i}">${v.key} · ${v.type}</option>`)
+            .map((v, i) => `<option value="${i}">${esc(v.key)} · ${esc(v.type)}</option>`)
             .join("")}
         </select>`
       : "";
 
-    const titleHtml = item.title ? `<div class="media-card-title">${item.title}</div>` : "";
+    const titleHtml = item.title ? `<div class="media-card-title">${esc(item.title)}</div>` : "";
 
     card.innerHTML = `
       <div class="media-preview">${initialPreview}</div>
       <div class="media-card-body">
         ${titleHtml}
-        <div class="media-card-label">${activeVariant ? activeVariant.key : "no media"} · ${type}</div>
+        <div class="media-card-label">${esc(activeVariant ? activeVariant.key : "no media")} · ${esc(type)}</div>
         ${selectHtml}
         <button type="button" class="media-download-btn">⬇ Download</button>
         <div class="media-download-status" style="display:none;"></div>
@@ -467,6 +475,11 @@ function safeStringify(value, indent = 2) {
   function renderMediaCards(data) {
     mediaCards.innerHTML = "";
 
+    if (data && data.success === false) {
+      const msg = (data.error && data.error.message) || "The request failed.";
+      mediaCards.innerHTML = `<div class="media-error">${esc(msg)}</div>`;
+      return;
+    }
     if (!data || !data.success || !data.result) {
       mediaCards.innerHTML = '<div class="media-empty">No media to show.</div>';
       return;
@@ -571,6 +584,7 @@ function safeStringify(value, indent = 2) {
     fetchBtn.textContent = "Fetching…";
     resultBadge.style.display = "none";
     resultBox.innerHTML = '<span class="empty-state">Loading…</span>';
+    mediaCards.innerHTML = '<span class="empty-state">Loading…</span>';
     lastResponseText = null;
     copyResponseBtn.disabled = true;
 
@@ -656,8 +670,8 @@ function safeStringify(value, indent = 2) {
       item.type = "button";
       item.className = "history-item";
       item.innerHTML = `
-        <span class="history-platform">${entry.platform}</span>
-        <span class="history-query">${entry.query}</span>
+        <span class="history-platform">${esc(entry.platform)}</span>
+        <span class="history-query">${esc(entry.query)}</span>
       `;
       item.addEventListener("click", () => {
         platformSelect.value = entry.platform;
