@@ -311,4 +311,8 @@ function truncateListResult(platform, data, limit) {
   return data;
 }
 
-module.exports = { normalizeResult, guessMediaType, truncateListResult };
+function hasHandler(platform) {
+  return Object.prototype.hasOwnProperty.call(HANDLERS, platform);
+}
+
+module.exports = { normalizeResult, guessMediaType, truncateListResult, hasHandler };
