@@ -4,7 +4,7 @@ const { PLATFORMS } = require("../config/platforms");
 const ApiError = require("../utils/ApiError");
 const { requireInputForQueryType, requireHttpUrl, requireNonEmptyString } = require("../utils/validate");
 const withTimeout = require("../utils/withTimeout");
-const { normalizeResult, truncateListResult } = require("../utils/normalizeResult");
+const { normalizeResult, truncateListResult, hasHandler } = require("../utils/normalizeResult");
 
 // Applies to platforms with `supportsLimit: true` (youtube-search, pinterest
 // search) — these can return dozens of hits per query, most of which nobody
@@ -86,6 +86,38 @@ function normalizeInputForDownloader(input) {
 }
 
 /**
+ * YouTube: pull the 11-char video id out of any common URL shape (watch,
+ * youtu.be, shorts, embed, live) so we can rebuild clean URLs without
+ * tracking params like ?si=... that some upstream scrapers choke on.
+ */
+function extractYouTubeId(input) {
+  const m = String(input || "").match(
+    /(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/))([A-Za-z0-9_-]{11})/i
+  );
+  return m ? m[1] : null;
+}
+
+/**
+ * The upstream YouTube scraper is picky and sometimes answers
+ * `{ developer, status: true }` with no links at all. Rather than trust one
+ * URL shape, try a few equivalent ones (the form the library documents
+ * first, then www, then exactly what the caller sent).
+ */
+function buildCandidates(platform, rawQuery, normalizedQuery) {
+  if (platform !== "youtube") return [normalizedQuery];
+  const id = extractYouTubeId(rawQuery);
+  const list = id
+    ? [`https://youtube.com/watch?v=${id}`, `https://www.youtube.com/watch?v=${id}`, rawQuery]
+    : [normalizedQuery, rawQuery];
+  return [...new Set(list)];
+}
+
+// Platforms whose success means "there are downloadable links". An empty
+// result from these is a failure, not a success. (Search platforms can
+// legitimately return nothing, so they're excluded.)
+const LIST_PLATFORMS = new Set(["youtube-search", "pinterest"]);
+
+/**
  * GET /api/download/:platform?url=...  (or ?query=... for search-based platforms)
  * Generic handler shared by every platform route.
  */
@@ -121,29 +153,64 @@ async function download(req, res) {
     normalizedQuery = normalizeInputForDownloader(rawQuery);
   }
 
-  const data = await withTimeout(
-    fn(normalizedQuery),
-    Number(process.env.DOWNLOAD_TIMEOUT_MS) || 25_000,
-    `The ${platform} downloader took too long to respond.`
-  ).catch((err) => {
-    // withTimeout's own rejection carries this exact message — anything
-    // else is a real error from the downloader itself and should keep
-    // its original message/shape.
-    if (err.message.endsWith("took too long to respond.")) {
-      throw new ApiError(504, err.message);
-    }
-    throw err;
-  });
+  const candidates = buildCandidates(platform, rawQuery, normalizedQuery);
+  const totalMs = Number(process.env.DOWNLOAD_TIMEOUT_MS) || 25_000;
+  const deadline = Date.now() + totalMs;
+  const mustHaveMedia = hasHandler(platform) && !LIST_PLATFORMS.has(platform);
 
-  // btch-downloader sometimes returns an object containing an `error` property
-  // or a `status: false` result instead of throwing. Map those to a consistent
-  // API error response so clients get a helpful message and proper HTTP status.
-  if (data && (data.error || data.status === false || data.success === false)) {
-    const message =
-      (typeof data.error === "string" && data.error) ||
-      (data.error && data.error.message) ||
-      "Downloader returned an error";
-    throw new ApiError(502, message);
+  let data = null;
+  let normalized = null;
+  let lastError = null;
+
+  for (const candidate of candidates) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 500) break;
+
+    let attempt;
+    try {
+      attempt = await withTimeout(
+        fn(candidate),
+        remaining,
+        `The ${platform} downloader took too long to respond.`
+      );
+    } catch (err) {
+      if (err.message.endsWith("took too long to respond.")) {
+        throw new ApiError(504, err.message);
+      }
+      lastError = err;
+      continue;
+    }
+
+    // btch-downloader sometimes returns an object containing an `error`
+    // property or a `status: false` result instead of throwing.
+    if (attempt && (attempt.error || attempt.status === false || attempt.success === false)) {
+      const message =
+        (typeof attempt.error === "string" && attempt.error) ||
+        (attempt.error && attempt.error.message) ||
+        "Downloader returned an error";
+      lastError = new ApiError(502, message);
+      continue;
+    }
+
+    const attemptNormalized = normalizeResult(platform, attempt);
+    if (mustHaveMedia && !attemptNormalized) {
+      // "status: true" but no links — the upstream gave us nothing usable.
+      lastError = new ApiError(
+        502,
+        `The ${platform} source answered but returned no downloadable links. ` +
+          "This is usually the upstream provider failing or rate-limiting, not a problem with your URL. Try again shortly."
+      );
+      continue;
+    }
+
+    data = attempt;
+    normalized = attemptNormalized;
+    lastError = null;
+    break;
+  }
+
+  if (lastError || data === null) {
+    throw lastError || new ApiError(504, `The ${platform} downloader took too long to respond.`);
   }
 
   // For list-shaped platforms (search results), trim to `limit` (default 5,
@@ -168,7 +235,7 @@ async function download(req, res) {
     // platforms without a handler yet, or if nothing usable was found; the
     // frontend falls back to its generic parser in that case.
     result: data,
-    normalized: normalizeResult(platform, data),
+    normalized: normalized || normalizeResult(platform, data),
   });
 }
 
