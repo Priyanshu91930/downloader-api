@@ -322,7 +322,36 @@
   }
   .media-download-btn:hover { filter: brightness(1.1); }
   .media-download-btn:disabled { opacity: 0.55; cursor: default; }
-  button:not(.media-download-btn):not(.copy-btn):not(.history-item):not(#fetchBtn) { font-family: var(--mono); }
+
+  .media-get-btn {
+    width: 100%;
+    background: linear-gradient(120deg, var(--accent), var(--accent-2));
+    color: #14102e;
+    border: none;
+    border-radius: 8px;
+    padding: 10px;
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 14px;
+    cursor: pointer;
+    transition: filter 0.15s ease;
+  }
+  .media-get-btn:hover { filter: brightness(1.1); }
+
+  .media-open-btn {
+    width: 100%;
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    padding: 10px;
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  .media-open-btn:hover { background: var(--accent-dim); }
 
   .media-download-status { font-family: var(--mono); font-size: 12px; color: var(--error); word-break: break-word; }
   .media-empty { color: var(--muted); font-size: 14px; line-height: 1.5; }

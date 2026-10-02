@@ -392,7 +392,7 @@ function safeStringify(value, indent = 2) {
       <div class="media-preview">${initialPreview}</div>
       <div class="media-card-body">
         ${titleHtml}
-        <div class="media-card-label">${esc(activeVariant ? activeVariant.key : "no media")} · ${esc(type)}</div>
+        <div class="media-card-label">${esc(activeVariant ? activeVariant.key : item.openUrl ? [item.meta, item.kind || "link"].filter(Boolean).join(" · ") : "no media")}${activeVariant ? " · " + esc(type) : ""}</div>
         ${selectHtml}
         <button type="button" class="media-download-btn">⬇ Download</button>
         <div class="media-download-status" style="display:none;"></div>
@@ -408,8 +408,28 @@ function safeStringify(value, indent = 2) {
         // the click-to-download wiring in renderMediaCards below would try
         // to fetch() this as if it were a real download and fail.
         btn.textContent = "Open ↗";
-        btn.classList.remove("media-download-btn");
+        btn.className = "media-open-btn";
         btn.addEventListener("click", () => window.open(item.openUrl, "_blank", "noopener,noreferrer"));
+
+        // A YouTube search hit can be re-run through the `youtube` platform
+        // to get real download links. Playlists can't (the downloader takes
+        // a single video), so they only get "Open".
+        if (item.kind === "video" && platforms.youtube && /(youtube\.com|youtu\.be)/i.test(item.openUrl)) {
+          const getBtn = document.createElement("button");
+          getBtn.type = "button";
+          getBtn.className = "media-get-btn";
+          getBtn.textContent = "Get download links";
+          getBtn.addEventListener("click", () => {
+            platformSelect.value = "youtube";
+            updateInputUI();
+            inputEl.value = item.openUrl;
+            detectedText.innerHTML = "";
+            updateEndpointLine();
+            window.scrollTo({ top: 0, behavior: "smooth" });
+            runFetch();
+          });
+          btn.parentNode.insertBefore(getBtn, btn);
+        }
       } else {
         btn.disabled = true;
         btn.textContent = "No downloadable link";
@@ -467,6 +487,8 @@ function safeStringify(value, indent = 2) {
         // that would just fetch an HTML page.
         variants: it.downloadable ? [{ key: it.meta || "Download", url: it.url, type: it.type }] : [],
         openUrl: it.downloadable ? null : it.url,
+        meta: it.meta,
+        kind: it.type,
       }));
     }
     return null;
