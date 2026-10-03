@@ -178,52 +178,28 @@ async function download(req, res) {
   let data = null;
   let lastError = null;
 
-  // Helper to execute single candidate attempt with validation
-  const tryCandidate = async (downloaderFn, candidateUrl, timeoutMs) => {
-    const attempt = await withTimeout(
-      downloaderFn(candidateUrl),
-      timeoutMs,
-      `The ${platform} downloader took too long to respond.`
-    );
-    if (!attempt || attempt.error || attempt.status === false || attempt.success === false) {
-      const msg =
-        (typeof attempt?.error === "string" && attempt.error) ||
-        (attempt?.error && attempt.error.message) ||
-        "Downloader returned invalid status";
-      throw new ApiError(502, msg);
-    }
-    const attemptNormalized = normalizeResult(platform, attempt);
-    if (mustHaveMedia && !attemptNormalized) {
-      throw new ApiError(
+  // Candidate evaluation loop with per-candidate timeout
+  for (const candidate of candidates.slice(0, 3)) {
+    try {
+      const attempt = await withTimeout(
+        fn(candidate),
+        4500,
+        `The ${platform} downloader took too long to respond.`
+      );
+      if (attempt && !attempt.error && attempt.status !== false && attempt.success !== false) {
+        const attemptNormalized = normalizeResult(platform, attempt);
+        if (attemptNormalized) {
+          data = attempt;
+          lastError = null;
+          break;
+        }
+      }
+      lastError = new ApiError(
         502,
         `The ${platform} source answered but returned no downloadable links.`
       );
-    }
-    return attempt;
-  };
-
-  // 1. Primary Attempt: Run top candidates concurrently in parallel
-  const primaryCandidates = candidates.slice(0, 3);
-  try {
-    data = await Promise.any(
-      primaryCandidates.map((c) => tryCandidate(fn, c, 5000))
-    );
-    lastError = null;
-  } catch (aggregateErr) {
-    // If all parallel primary attempts fail, extract last error or default
-    const errors = aggregateErr.errors || [];
-    lastError = errors[0] || new ApiError(502, `The ${platform} downloader took too long or returned no links.`);
-  }
-
-  // 2. Secondary Fallback for Instagram using btch.aio in parallel
-  if (platform === "instagram" && (data === null || lastError) && typeof btch.aio === "function") {
-    try {
-      data = await Promise.any(
-        primaryCandidates.map((c) => tryCandidate(btch.aio, c, 4000))
-      );
-      lastError = null;
-    } catch (fallbackErr) {
-      // Keep primary error if fallback also fails
+    } catch (err) {
+      lastError = err.statusCode ? err : new ApiError(504, err.message);
     }
   }
 

@@ -1,17 +1,21 @@
 /**
  * Races a promise against a timeout, rejecting with a clear error if the
- * timeout wins. Used to bound calls to the btch-downloader library, which
- * doesn't accept an AbortSignal itself — this can't cancel the underlying
- * work (it may keep running in the background), but it stops the client
- * from waiting on it indefinitely, which is what actually matters for a
- * caller.
+ * timeout wins. Used to bound calls to the btch-downloader library.
+ * Safe against unhandled promise rejections during parallel Promise.any races.
  */
 function withTimeout(promise, ms, message = "Operation timed out") {
   let timer;
-  const timeout = new Promise((_, reject) => {
+  const timeoutPromise = new Promise((_, reject) => {
     timer = setTimeout(() => reject(new Error(message)), ms);
   });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+
+  // Attach catch handlers to prevent unhandled rejection crashes in Node.js
+  timeoutPromise.catch(() => {});
+  if (promise && typeof promise.catch === "function") {
+    promise.catch(() => {});
+  }
+
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
 }
 
 module.exports = withTimeout;
