@@ -172,87 +172,58 @@ async function download(req, res) {
   }
 
   const candidates = buildCandidates(platform, rawQuery, normalizedQuery);
-  const totalMs = Number(process.env.DOWNLOAD_TIMEOUT_MS) || 12_000;
-  const deadline = Date.now() + totalMs;
+  const totalMs = Number(process.env.DOWNLOAD_TIMEOUT_MS) || 10_000;
   const mustHaveMedia = hasHandler(platform) && !LIST_PLATFORMS.has(platform);
 
   let data = null;
   let lastError = null;
 
-  for (const candidate of candidates) {
-    const remaining = deadline - Date.now();
-    if (remaining <= 500) break;
-
-    let attempt;
-    try {
-      attempt = await withTimeout(
-        fn(candidate),
-        Math.min(remaining, 5000),
-        `The ${platform} downloader took too long to respond.`
-      );
-    } catch (err) {
-      if (err.message.endsWith("took too long to respond.")) {
-        lastError = new ApiError(504, err.message);
-        continue;
-      }
-      lastError = err;
-      continue;
+  // Helper to execute single candidate attempt with validation
+  const tryCandidate = async (downloaderFn, candidateUrl, timeoutMs) => {
+    const attempt = await withTimeout(
+      downloaderFn(candidateUrl),
+      timeoutMs,
+      `The ${platform} downloader took too long to respond.`
+    );
+    if (!attempt || attempt.error || attempt.status === false || attempt.success === false) {
+      const msg =
+        (typeof attempt?.error === "string" && attempt.error) ||
+        (attempt?.error && attempt.error.message) ||
+        "Downloader returned invalid status";
+      throw new ApiError(502, msg);
     }
-
-    // btch-downloader sometimes returns an object containing an `error`
-    // property or a `status: false` result instead of throwing.
-    if (attempt && (attempt.error || attempt.status === false || attempt.success === false)) {
-      const message =
-        (typeof attempt.error === "string" && attempt.error) ||
-        (attempt.error && attempt.error.message) ||
-        "Downloader returned an error";
-      lastError = new ApiError(502, message);
-      continue;
-    }
-
     const attemptNormalized = normalizeResult(platform, attempt);
     if (mustHaveMedia && !attemptNormalized) {
-      // "status: true" but no links — the upstream gave us nothing usable.
-      lastError = new ApiError(
+      throw new ApiError(
         502,
-        `The ${platform} source answered but returned no downloadable links. ` +
-          "This is usually the upstream provider failing or rate-limiting, not a problem with your URL. Try again shortly."
+        `The ${platform} source answered but returned no downloadable links.`
       );
-      continue;
     }
+    return attempt;
+  };
 
-    data = attempt;
+  // 1. Primary Attempt: Run top candidates concurrently in parallel
+  const primaryCandidates = candidates.slice(0, 3);
+  try {
+    data = await Promise.any(
+      primaryCandidates.map((c) => tryCandidate(fn, c, 5000))
+    );
     lastError = null;
-    break;
+  } catch (aggregateErr) {
+    // If all parallel primary attempts fail, extract last error or default
+    const errors = aggregateErr.errors || [];
+    lastError = errors[0] || new ApiError(502, `The ${platform} downloader took too long or returned no links.`);
   }
 
-  // Fallback for Instagram if primary btch.igdl attempt returned no media
-  if (platform === "instagram" && (lastError || data === null) && typeof btch.aio === "function") {
-    for (const candidate of candidates) {
-      const remaining = deadline - Date.now();
-      if (remaining <= 500) break;
-      try {
-        const fallbackAttempt = await withTimeout(
-          btch.aio(candidate),
-          Math.min(remaining, 4000),
-          "The instagram fallback downloader took too long to respond."
-        );
-        if (
-          fallbackAttempt &&
-          !fallbackAttempt.error &&
-          fallbackAttempt.status !== false &&
-          fallbackAttempt.success !== false
-        ) {
-          const fallbackNormalized = normalizeResult(platform, fallbackAttempt);
-          if (fallbackNormalized) {
-            data = fallbackAttempt;
-            lastError = null;
-            break;
-          }
-        }
-      } catch (err) {
-        // continue trying candidates
-      }
+  // 2. Secondary Fallback for Instagram using btch.aio in parallel
+  if (platform === "instagram" && (data === null || lastError) && typeof btch.aio === "function") {
+    try {
+      data = await Promise.any(
+        primaryCandidates.map((c) => tryCandidate(btch.aio, c, 4000))
+      );
+      lastError = null;
+    } catch (fallbackErr) {
+      // Keep primary error if fallback also fails
     }
   }
 
