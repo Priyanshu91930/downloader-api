@@ -97,19 +97,37 @@ function extractYouTubeId(input) {
   return m ? m[1] : null;
 }
 
-/**
- * The upstream YouTube scraper is picky and sometimes answers
- * `{ developer, status: true }` with no links at all. Rather than trust one
- * URL shape, try a few equivalent ones (the form the library documents
- * first, then www, then exactly what the caller sent).
- */
+function extractInstagramShortcode(input) {
+  const m = String(input || "").match(/(?:instagram\.com|instagr\.am)\/(?:p|reel|reels|tv|stories|share)\/([A-Za-z0-9_-]+)/i);
+  return m ? m[1] : null;
+}
+
 function buildCandidates(platform, rawQuery, normalizedQuery) {
-  if (platform !== "youtube") return [normalizedQuery];
-  const id = extractYouTubeId(rawQuery);
-  const list = id
-    ? [`https://youtube.com/watch?v=${id}`, `https://www.youtube.com/watch?v=${id}`, rawQuery]
-    : [normalizedQuery, rawQuery];
-  return [...new Set(list)];
+  if (platform === "youtube") {
+    const id = extractYouTubeId(rawQuery);
+    const list = id
+      ? [`https://youtube.com/watch?v=${id}`, `https://www.youtube.com/watch?v=${id}`, rawQuery]
+      : [normalizedQuery, rawQuery];
+    return [...new Set(list)];
+  }
+
+  if (platform === "instagram") {
+    const code = extractInstagramShortcode(rawQuery);
+    const cleanUrl = rawQuery.split("?")[0];
+    const list = code
+      ? [
+          rawQuery,
+          cleanUrl,
+          `https://www.instagram.com/reel/${code}/`,
+          `https://www.instagram.com/p/${code}/`,
+          `https://www.instagram.com/tv/${code}/`,
+          `https://instagr.am/p/${code}/`,
+        ]
+      : [rawQuery, cleanUrl];
+    return [...new Set(list.filter(Boolean))];
+  }
+
+  return [normalizedQuery];
 }
 
 // Platforms whose success means "there are downloadable links". An empty
@@ -205,6 +223,36 @@ async function download(req, res) {
     data = attempt;
     lastError = null;
     break;
+  }
+
+  // Fallback for Instagram if primary btch.igdl attempt returned no media
+  if (platform === "instagram" && (lastError || data === null) && typeof btch.aio === "function") {
+    for (const candidate of candidates) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 500) break;
+      try {
+        const fallbackAttempt = await withTimeout(
+          btch.aio(candidate),
+          remaining,
+          "The instagram fallback downloader took too long to respond."
+        );
+        if (
+          fallbackAttempt &&
+          !fallbackAttempt.error &&
+          fallbackAttempt.status !== false &&
+          fallbackAttempt.success !== false
+        ) {
+          const fallbackNormalized = normalizeResult(platform, fallbackAttempt);
+          if (fallbackNormalized) {
+            data = fallbackAttempt;
+            lastError = null;
+            break;
+          }
+        }
+      } catch (err) {
+        // continue trying candidates
+      }
+    }
   }
 
   if (lastError || data === null) {

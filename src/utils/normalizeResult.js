@@ -90,21 +90,62 @@ function youtubeSearch(raw) {
   return { kind: "list", items };
 }
 
-// --- instagram: {developer, status, result: [{thumbnail, url}, ...]} ---
-// The library gives no type field and the CDN url has no file extension
-// (it's a signed token endpoint) — reels/posts via this API are
-// overwhelmingly video, so that's the safe default absent any other signal.
+// --- instagram: handles multiple response shapes from btch-downloader / scraper ---
 function instagram(raw) {
-  const list = Array.isArray(raw.result) ? raw.result : [];
-  const media = list
-    .filter((it) => isUrl(it && it.url))
-    .map((it, i) => ({
-      label: list.length > 1 ? `Media ${i + 1}` : "Video",
-      type: guessMediaType({ label: "video", url: it.url }),
-      url: it.url,
-    }));
-  const thumbnail = (list[0] && list[0].thumbnail) || null;
-  return { kind: "media", title: null, thumbnail, author: null, media };
+  if (!raw) return null;
+
+  let list = [];
+  if (Array.isArray(raw)) {
+    list = raw;
+  } else if (Array.isArray(raw.result)) {
+    list = raw.result;
+  } else if (Array.isArray(raw.data)) {
+    list = raw.data;
+  } else if (Array.isArray(raw.url)) {
+    list = raw.url;
+  } else if (typeof raw === "object") {
+    if (raw.url || raw.download_url || raw.video || raw.link || raw.dlink || raw.hd || raw.sd) {
+      list = [raw];
+    }
+  }
+
+  const media = [];
+  let thumbnail = raw.thumbnail || raw.cover || raw.image || null;
+
+  list.forEach((it, i) => {
+    if (typeof it === "string" && isUrl(it)) {
+      media.push({
+        label: list.length > 1 ? `Media ${i + 1}` : "Video",
+        type: guessMediaType({ label: "video", url: it }),
+        url: it,
+      });
+    } else if (it && typeof it === "object") {
+      const u = it.url || it.download_url || it.video || it.link || it.dlink || it.hd || it.sd;
+      if (isUrl(u)) {
+        if (!thumbnail && (it.thumbnail || it.cover || it.image)) {
+          thumbnail = it.thumbnail || it.cover || it.image;
+        }
+        media.push({
+          label: list.length > 1 ? (it.quality || `Media ${i + 1}`) : "Video",
+          type: guessMediaType({ label: "video", url: u }),
+          url: u,
+        });
+      }
+    }
+  });
+
+  if (!thumbnail && media[0] && media[0].url) {
+    thumbnail = media[0].url;
+  }
+
+  if (!media.length) return null;
+  return {
+    kind: "media",
+    title: raw.title || raw.caption || null,
+    thumbnail,
+    author: raw.author || raw.username || null,
+    media,
+  };
 }
 
 // --- facebook: {developer, status, Normal_video, HD} ---

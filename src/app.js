@@ -12,6 +12,7 @@ const requestTimeout = require("./middleware/requestTimeout");
 const securityHeaders = require("./middleware/securityHeaders");
 
 const app = express();
+app.set("trust proxy", true);
 app.disable("x-powered-by");
 
 // --- Core middleware ---
@@ -27,6 +28,7 @@ const limiter = rateLimit({
   max: Number(process.env.RATE_LIMIT_MAX) || 30,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
   message: { success: false, error: { message: "Too many requests, please try again shortly.", statusCode: 429 } },
 });
 app.use("/api", limiter);
