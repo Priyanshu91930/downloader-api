@@ -175,36 +175,61 @@ async function download(req, res) {
   const totalMs = Number(process.env.DOWNLOAD_TIMEOUT_MS) || 10_000;
   const mustHaveMedia = hasHandler(platform) && !LIST_PLATFORMS.has(platform);
 
-  let data = null;
-  let lastError = null;
+  // Candidate evaluation in PARALLEL with a hard 7.5s Vercel timeout guard
+  const selectedCandidates = candidates.slice(0, 3);
+  const tasks = [];
 
-  // Candidate evaluation loop with per-candidate timeout
-  for (const candidate of candidates.slice(0, 3)) {
-    try {
-      const attempt = await withTimeout(
+  for (const candidate of selectedCandidates) {
+    // Primary downloader function
+    tasks.push(
+      withTimeout(
         fn(candidate),
-        4500,
-        `The ${platform} downloader took too long to respond.`
-      );
-      if (attempt && !attempt.error && attempt.status !== false && attempt.success !== false) {
-        const attemptNormalized = normalizeResult(platform, attempt);
-        if (attemptNormalized) {
-          data = attempt;
-          lastError = null;
-          break;
+        6000,
+        `The ${platform} downloader took too long.`
+      ).then((attempt) => {
+        if (attempt && !attempt.error && attempt.status !== false && attempt.success !== false) {
+          const attemptNormalized = normalizeResult(platform, attempt);
+          if (attemptNormalized) return attempt;
         }
-      }
-      lastError = new ApiError(
-        502,
-        `The ${platform} source answered but returned no downloadable links.`
+        throw new Error("No valid media found in candidate response.");
+      })
+    );
+
+    // Add btch.aio as a parallel fallback candidate for Instagram
+    if (platform === "instagram" && typeof btch.aio === "function" && candidate === selectedCandidates[0]) {
+      tasks.push(
+        withTimeout(
+          btch.aio(candidate),
+          6000,
+          `The instagram fallback downloader took too long.`
+        ).then((attempt) => {
+          if (attempt && !attempt.error && attempt.status !== false && attempt.success !== false) {
+            const attemptNormalized = normalizeResult(platform, attempt);
+            if (attemptNormalized) return attempt;
+          }
+          throw new Error("No valid media found in fallback response.");
+        })
       );
-    } catch (err) {
-      lastError = err.statusCode ? err : new ApiError(504, err.message);
     }
   }
 
-  if (lastError || data === null) {
-    throw lastError || new ApiError(504, `The ${platform} downloader took too long to respond.`);
+  // Hard timeout guard of 7.5 seconds (prevents Vercel 10s serverless timeout kill)
+  const vercelGuardPromise = new Promise((_, reject) => {
+    setTimeout(() => {
+      reject(new ApiError(504, `The ${platform} downloader took too long to respond.`));
+    }, 7500);
+  });
+
+  try {
+    data = await Promise.race([
+      Promise.any(tasks),
+      vercelGuardPromise,
+    ]);
+  } catch (err) {
+    if (err instanceof ApiError) {
+      throw err;
+    }
+    throw new ApiError(504, `The ${platform} downloader took too long or returned no media.`);
   }
 
   // For list-shaped platforms (search results), trim to `limit` (default 5,
