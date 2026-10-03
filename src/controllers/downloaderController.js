@@ -172,7 +172,7 @@ async function download(req, res) {
   }
 
   const candidates = buildCandidates(platform, rawQuery, normalizedQuery);
-  const totalMs = Number(process.env.DOWNLOAD_TIMEOUT_MS) || 25_000;
+  const totalMs = Number(process.env.DOWNLOAD_TIMEOUT_MS) || 12_000;
   const deadline = Date.now() + totalMs;
   const mustHaveMedia = hasHandler(platform) && !LIST_PLATFORMS.has(platform);
 
@@ -187,12 +187,13 @@ async function download(req, res) {
     try {
       attempt = await withTimeout(
         fn(candidate),
-        remaining,
+        Math.min(remaining, 5000),
         `The ${platform} downloader took too long to respond.`
       );
     } catch (err) {
       if (err.message.endsWith("took too long to respond.")) {
-        throw new ApiError(504, err.message);
+        lastError = new ApiError(504, err.message);
+        continue;
       }
       lastError = err;
       continue;
@@ -233,7 +234,7 @@ async function download(req, res) {
       try {
         const fallbackAttempt = await withTimeout(
           btch.aio(candidate),
-          remaining,
+          Math.min(remaining, 4000),
           "The instagram fallback downloader took too long to respond."
         );
         if (
