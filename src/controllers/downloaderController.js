@@ -221,15 +221,13 @@ async function buildCandidates(platform, rawQuery, normalizedQuery) {
   if (platform === "instagram") {
     const code = extractInstagramShortcode(rawQuery);
     const cleanUrl = rawQuery.split("?")[0];
-    const list = code
-      ? [
-          cleanUrl,
-          rawQuery,
-          `https://www.instagram.com/reel/${code}/`,
-          `https://www.instagram.com/p/${code}/`,
-          `https://www.instagram.com/tv/${code}/`,
-        ]
-      : [cleanUrl, rawQuery];
+    const list = [cleanUrl];
+    if (code) {
+      list.push(`https://www.instagram.com/reel/${code}/`);
+    }
+    if (rawQuery !== cleanUrl) {
+      list.push(rawQuery);
+    }
     return [...new Set(list.filter(Boolean))];
   }
 
@@ -288,13 +286,13 @@ async function download(req, res) {
   }
 
   const candidates = await buildCandidates(platform, rawQuery, normalizedQuery);
-  const totalMs = Number(process.env.DOWNLOAD_TIMEOUT_MS) || 8_200;
-  const candidateTimeoutMs = Math.min(totalMs - 500, 7_500);
-  const guardTimeoutMs = Math.min(totalMs, 8_200);
+  const totalMs = Number(process.env.DOWNLOAD_TIMEOUT_MS) || 9_600;
+  const candidateTimeoutMs = Math.min(totalMs - 400, 9_200);
+  const guardTimeoutMs = Math.min(totalMs, 9_600);
   const mustHaveMedia = hasHandler(platform) && !LIST_PLATFORMS.has(platform);
 
   // Candidate evaluation in PARALLEL with a hard timeout guard
-  const selectedCandidates = candidates.slice(0, 3);
+  const selectedCandidates = candidates.slice(0, 2);
   const tasks = [];
 
   for (const candidate of selectedCandidates) {
@@ -326,23 +324,6 @@ async function download(req, res) {
             if (attemptNormalized) return attempt;
           }
           throw new Error("No valid media found in direct threads scrape.");
-        })
-      );
-    }
-
-    // Add btch.aio as a parallel fallback candidate for Instagram
-    if (platform === "instagram" && typeof btch.aio === "function" && candidate === selectedCandidates[0]) {
-      tasks.push(
-        withTimeout(
-          btch.aio(candidate),
-          candidateTimeoutMs,
-          `The instagram fallback downloader took too long.`
-        ).then((attempt) => {
-          if (attempt && !attempt.error && attempt.status !== false && attempt.success !== false) {
-            const attemptNormalized = normalizeResult(platform, attempt);
-            if (attemptNormalized) return attempt;
-          }
-          throw new Error("No valid media found in fallback response.");
         })
       );
     }
