@@ -288,9 +288,9 @@ async function download(req, res) {
   }
 
   const candidates = await buildCandidates(platform, rawQuery, normalizedQuery);
-  const totalMs = Number(process.env.DOWNLOAD_TIMEOUT_MS) || 9_500;
-  const candidateTimeoutMs = Math.min(totalMs - 500, 8_500);
-  const guardTimeoutMs = Math.min(totalMs, 9_200);
+  const totalMs = Number(process.env.DOWNLOAD_TIMEOUT_MS) || 8_200;
+  const candidateTimeoutMs = Math.min(totalMs - 500, 7_500);
+  const guardTimeoutMs = Math.min(totalMs, 8_200);
   const mustHaveMedia = hasHandler(platform) && !LIST_PLATFORMS.has(platform);
 
   // Candidate evaluation in PARALLEL with a hard timeout guard
