@@ -41,7 +41,7 @@ export default {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 8500); // 8.5s per Vercel request
+        const timer = setTimeout(() => controller.abort(), 9500); // 9.5s per Vercel request
 
         const res = await fetch(targetUrl, {
           method: request.method,
