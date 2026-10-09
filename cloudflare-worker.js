@@ -1,8 +1,8 @@
 /**
  * Cloudflare Worker Proxy for Downloader API
  * 
- * Solves Vercel's 10-second timeout limit by chaining retries
- * within Cloudflare's generous 30-second wall-clock fetch budget.
+ * Extended 30-second budget proxy that handles both API requests
+ * (with chained Vercel retries) and Web frontend static assets.
  * 
  * Free Tier: 100,000 requests/day, 0 Credit Card required.
  */
@@ -31,10 +31,31 @@ export default {
       });
     }
 
-    // Forward path & query params to Vercel backend
     const targetUrl = `${vercelOrigin.replace(/\/+$/, '')}${url.pathname}${url.search}`;
-    
-    // Perform up to 3 chained attempts within Cloudflare's 30-second budget
+    const isApiRoute = url.pathname.startsWith('/api/');
+
+    // For static assets & HTML pages (non-API), do direct proxy pass-through
+    if (!isApiRoute) {
+      try {
+        const response = await fetch(targetUrl, {
+          method: request.method,
+          headers: request.headers,
+        });
+
+        const newHeaders = new Headers(response.headers);
+        Object.entries(corsHeaders).forEach(([k, v]) => newHeaders.set(k, v));
+
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: newHeaders,
+        });
+      } catch (err) {
+        return new Response('Failed to load page', { status: 502, headers: corsHeaders });
+      }
+    }
+
+    // For API routes, perform up to 3 chained attempts within Cloudflare's 30s budget
     const maxAttempts = 3;
     let lastResponse = null;
 
@@ -43,41 +64,51 @@ export default {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 9500); // 9.5s per Vercel request
 
+        const reqHeaders = new Headers(request.headers);
+        reqHeaders.set('User-Agent', request.headers.get('User-Agent') || 'CloudflareWorkerProxy/1.0');
+        if (!reqHeaders.get('Accept')) {
+          reqHeaders.set('Accept', 'application/json');
+        }
+
         const res = await fetch(targetUrl, {
           method: request.method,
-          headers: {
-            'User-Agent': request.headers.get('User-Agent') || 'CloudflareWorkerProxy/1.0',
-            'Accept': 'application/json',
-          },
+          headers: reqHeaders,
           signal: controller.signal,
         });
 
         clearTimeout(timer);
 
         if (res.ok) {
-          const data = await res.json();
-          return new Response(JSON.stringify(data), {
-            status: 200,
-            headers: {
-              'Content-Type': 'application/json',
-              ...corsHeaders,
-            },
-          });
+          const contentType = res.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const data = await res.json();
+            return new Response(JSON.stringify(data), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json', ...corsHeaders },
+            });
+          } else {
+            const text = await res.text();
+            return new Response(text, {
+              status: 200,
+              headers: { 'Content-Type': contentType || 'text/plain', ...corsHeaders },
+            });
+          }
         }
         
         lastResponse = res;
       } catch (err) {
-        // Retry on timeout or server error
+        // Retry on timeout or network failure
       }
     }
 
-    // Fallback response if all attempts exhausted
+    // Fallback response if all API attempts exhausted
     if (lastResponse) {
       try {
+        const contentType = lastResponse.headers.get('content-type') || '';
         const body = await lastResponse.text();
         return new Response(body, {
           status: lastResponse.status,
-          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+          headers: { 'Content-Type': contentType || 'application/json', ...corsHeaders },
         });
       } catch (_) {}
     }
