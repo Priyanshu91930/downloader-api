@@ -223,14 +223,13 @@ async function buildCandidates(platform, rawQuery, normalizedQuery) {
     const cleanUrl = rawQuery.split("?")[0];
     const list = code
       ? [
-          rawQuery,
           cleanUrl,
+          rawQuery,
           `https://www.instagram.com/reel/${code}/`,
           `https://www.instagram.com/p/${code}/`,
           `https://www.instagram.com/tv/${code}/`,
-          `https://instagr.am/p/${code}/`,
         ]
-      : [rawQuery, cleanUrl];
+      : [cleanUrl, rawQuery];
     return [...new Set(list.filter(Boolean))];
   }
 
@@ -289,10 +288,12 @@ async function download(req, res) {
   }
 
   const candidates = await buildCandidates(platform, rawQuery, normalizedQuery);
-  const totalMs = Number(process.env.DOWNLOAD_TIMEOUT_MS) || 10_000;
+  const totalMs = Number(process.env.DOWNLOAD_TIMEOUT_MS) || 25_000;
+  const candidateTimeoutMs = Math.min(totalMs - 1000, 24_000);
+  const guardTimeoutMs = Math.min(totalMs, 24_500);
   const mustHaveMedia = hasHandler(platform) && !LIST_PLATFORMS.has(platform);
 
-  // Candidate evaluation in PARALLEL with a hard 7.5s Vercel timeout guard
+  // Candidate evaluation in PARALLEL with a hard timeout guard
   const selectedCandidates = candidates.slice(0, 3);
   const tasks = [];
 
@@ -301,7 +302,7 @@ async function download(req, res) {
     tasks.push(
       withTimeout(
         fn(candidate),
-        6000,
+        candidateTimeoutMs,
         `The ${platform} downloader took too long.`
       ).then((attempt) => {
         if (attempt && !attempt.error && attempt.status !== false && attempt.success !== false) {
@@ -317,7 +318,7 @@ async function download(req, res) {
       tasks.push(
         withTimeout(
           scrapeThreadsDirectly(candidate),
-          6000,
+          candidateTimeoutMs,
           `The direct threads scraper took too long.`
         ).then((attempt) => {
           if (attempt && attempt.result) {
@@ -334,7 +335,7 @@ async function download(req, res) {
       tasks.push(
         withTimeout(
           btch.aio(candidate),
-          6000,
+          candidateTimeoutMs,
           `The instagram fallback downloader took too long.`
         ).then((attempt) => {
           if (attempt && !attempt.error && attempt.status !== false && attempt.success !== false) {
@@ -347,11 +348,11 @@ async function download(req, res) {
     }
   }
 
-  // Hard timeout guard of 7.5 seconds (prevents Vercel 10s serverless timeout kill)
+  // Hard timeout guard
   const vercelGuardPromise = new Promise((_, reject) => {
     setTimeout(() => {
       reject(new ApiError(504, `The ${platform} downloader took too long to respond.`));
-    }, 7500);
+    }, guardTimeoutMs);
   });
 
   let data;
