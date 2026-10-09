@@ -274,6 +274,29 @@ function pinterest(raw) {
   };
 }
 
+// --- threads: {developer, status, result: {status, type, video, download, image}} ---
+function threads(raw) {
+  if (!raw) return null;
+  const res = (raw.result && typeof raw.result === "object") ? raw.result : raw;
+  const media = [];
+  const videoUrl = res.video || res.url || res.download || (typeof res === "string" && isUrl(res) ? res : null);
+  if (isUrl(videoUrl)) {
+    media.push({ label: "Video", type: "video", url: videoUrl });
+  }
+  const imageUrl = res.image || res.thumbnail || res.cover;
+  if (isUrl(imageUrl)) {
+    media.push({ label: "Image", type: "image", url: imageUrl });
+  }
+  if (!media.length) return null;
+  return {
+    kind: "media",
+    title: res.title || raw.title || null,
+    thumbnail: isUrl(imageUrl) ? imageUrl : (isUrl(videoUrl) ? videoUrl : null),
+    author: res.author || raw.author || null,
+    media,
+  };
+}
+
 const HANDLERS = {
   youtube,
   "youtube-search": youtubeSearch,
@@ -287,6 +310,7 @@ const HANDLERS = {
   douyin,
   soundcloud,
   pinterest,
+  threads,
 };
 
 /**

@@ -102,7 +102,114 @@ function extractInstagramShortcode(input) {
   return m ? m[1] : null;
 }
 
-function buildCandidates(platform, rawQuery, normalizedQuery) {
+async function expandThreadsUrl(inputUrl) {
+  let url = String(inputUrl || "").trim();
+  if (!url) return url;
+  if (!/^https?:\/\//i.test(url)) {
+    url = `https://${url}`;
+  }
+
+  if (/(?:threads\.com|threads\.net)\/(?:share|t)\//i.test(url)) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3500);
+      const res = await fetch(url, {
+        method: "HEAD",
+        redirect: "follow",
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (res && res.url && res.url !== url) {
+        url = res.url;
+      }
+    } catch (_) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 3500);
+        const res = await fetch(url, {
+          method: "GET",
+          redirect: "follow",
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          },
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        if (res && res.url && res.url !== url) {
+          url = res.url;
+        }
+      } catch (__) {}
+    }
+  }
+  return url;
+}
+
+async function scrapeThreadsDirectly(inputUrl) {
+  try {
+    const res = await fetch(inputUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+
+    const media = [];
+    const videoVersionsMatches = html.match(/"video_versions":\s*(\[[^\]]+\])/g) || [];
+    for (const matchStr of videoVersionsMatches) {
+      try {
+        const jsonStr = matchStr.replace(/"video_versions":\s*/, "");
+        const versions = JSON.parse(jsonStr);
+        if (Array.isArray(versions)) {
+          versions.forEach((v) => {
+            if (v && v.url) {
+              const cleanUrl = v.url.replace(/\\/g, "");
+              if (!media.some((m) => m.url === cleanUrl)) {
+                media.push({
+                  label: v.width ? `Video (${v.width}x${v.height})` : "HD Video",
+                  type: "video",
+                  url: cleanUrl,
+                });
+              }
+            }
+          });
+        }
+      } catch (_) {}
+    }
+
+    const ogTitleMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i) ||
+                         html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']/i);
+    const title = ogTitleMatch ? ogTitleMatch[1].replace(/&amp;/g, "&") : null;
+
+    const ogImageMatch = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i) ||
+                         html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i);
+    const thumbnail = ogImageMatch ? ogImageMatch[1].replace(/&amp;/g, "&") : (media[0] ? media[0].url : null);
+
+    if (!media.length) return null;
+
+    return {
+      status: true,
+      title,
+      thumbnail,
+      result: {
+        status: true,
+        type: "video",
+        video: media[0].url,
+        media,
+      },
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+async function buildCandidates(platform, rawQuery, normalizedQuery) {
   if (platform === "youtube") {
     const id = extractYouTubeId(rawQuery);
     const list = id
@@ -124,6 +231,16 @@ function buildCandidates(platform, rawQuery, normalizedQuery) {
           `https://instagr.am/p/${code}/`,
         ]
       : [rawQuery, cleanUrl];
+    return [...new Set(list.filter(Boolean))];
+  }
+
+  if (platform === "threads" || /(threads\.com|threads\.net)/i.test(rawQuery)) {
+    const expanded = await expandThreadsUrl(rawQuery);
+    const cleanExpanded = expanded.split("?")[0];
+    const threadsComClean = cleanExpanded.replace(/threads\.net/i, "threads.com");
+    const threadsNetClean = cleanExpanded.replace(/threads\.com/i, "threads.net");
+
+    const list = [threadsComClean, threadsNetClean, cleanExpanded, expanded, rawQuery];
     return [...new Set(list.filter(Boolean))];
   }
 
@@ -171,7 +288,7 @@ async function download(req, res) {
     normalizedQuery = normalizeInputForDownloader(rawQuery);
   }
 
-  const candidates = buildCandidates(platform, rawQuery, normalizedQuery);
+  const candidates = await buildCandidates(platform, rawQuery, normalizedQuery);
   const totalMs = Number(process.env.DOWNLOAD_TIMEOUT_MS) || 10_000;
   const mustHaveMedia = hasHandler(platform) && !LIST_PLATFORMS.has(platform);
 
@@ -194,6 +311,23 @@ async function download(req, res) {
         throw new Error("No valid media found in candidate response.");
       })
     );
+
+    // Direct HTML scraper fallback for Threads
+    if (platform === "threads" && candidate === selectedCandidates[0]) {
+      tasks.push(
+        withTimeout(
+          scrapeThreadsDirectly(candidate),
+          6000,
+          `The direct threads scraper took too long.`
+        ).then((attempt) => {
+          if (attempt && attempt.result) {
+            const attemptNormalized = normalizeResult(platform, attempt);
+            if (attemptNormalized) return attempt;
+          }
+          throw new Error("No valid media found in direct threads scrape.");
+        })
+      );
+    }
 
     // Add btch.aio as a parallel fallback candidate for Instagram
     if (platform === "instagram" && typeof btch.aio === "function" && candidate === selectedCandidates[0]) {
@@ -220,6 +354,7 @@ async function download(req, res) {
     }, 7500);
   });
 
+  let data;
   try {
     data = await Promise.race([
       Promise.any(tasks),
