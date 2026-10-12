@@ -162,6 +162,7 @@ export default {
     <p>Hybrid Edge + Vercel Fallback. 100% Reliable.</p>
     <p>Endpoint: <code>/api/download/instagram?url=YOUR_INSTAGRAM_URL</code></p>
     <p>Endpoint: <code>/api/download/threads?url=YOUR_THREADS_URL</code></p>
+    <p>Endpoint: <code>/api/download/pinterest?url=YOUR_PINTEREST_URL</code></p>
   </div>
 </body>
 </html>`, {
