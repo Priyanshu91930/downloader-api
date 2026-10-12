@@ -262,14 +262,23 @@ function pinterest(raw) {
   const images = pin.images || {};
   const bestImage = (images.orig && images.orig.url) || images["736x"]?.url || images["600x315"]?.url || pin.image || null;
   const media = [];
-  if (isUrl(pin.video_url)) media.push({ label: "Video", type: "video", url: pin.video_url });
+  const videoUrl =
+    (isUrl(pin.video_url) && pin.video_url) ||
+    (isUrl(pin.video) && pin.video) ||
+    (pin.videos && isUrl(pin.videos.V_720P?.url) && pin.videos.V_720P.url) ||
+    (pin.videos && isUrl(pin.videos.v720P?.url) && pin.videos.v720P.url) ||
+    (pin.videos && isUrl(pin.videos.V_HLSV4?.url) && pin.videos.V_HLSV4.url) ||
+    (pin.videos && typeof pin.videos === "object" && Object.values(pin.videos).find((v) => isUrl(v?.url))?.url) ||
+    null;
+
+  if (isUrl(videoUrl)) media.push({ label: "HD Video", type: "video", url: videoUrl });
   if (isUrl(bestImage)) media.push({ label: media.length ? "Cover Image" : "Image", type: "image", url: bestImage });
   if (!media.length) return null;
   return {
     kind: "media",
     title: pin.title || (pin.description && pin.description.trim()) || null,
-    thumbnail: bestImage,
-    author: pin.user ? pin.user.full_name : null,
+    thumbnail: bestImage || (pin.videos?.V_720P?.thumbnail) || null,
+    author: pin.user ? (pin.user.full_name || pin.user.username) : null,
     media,
   };
 }

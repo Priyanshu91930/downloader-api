@@ -32,14 +32,14 @@ export default {
     if (url.pathname === '/api/platforms') {
       return new Response(JSON.stringify({
         status: true,
-        platforms: ['instagram', 'threads'],
+        platforms: ['instagram', 'threads', 'pinterest'],
       }), {
         status: 200,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       });
     }
 
-    // 3. Media Download Endpoint (/api/download/instagram or /api/download/threads)
+    // 3. Media Download Endpoint (/api/download/instagram or /api/download/threads or /api/download/pinterest)
     if (url.pathname.startsWith('/api/download/')) {
       const platform = url.pathname.split('/api/download/')[1]?.toLowerCase();
 
@@ -68,10 +68,21 @@ export default {
           directResult = await scrapeThreadsDirectly(inputUrl);
         } else if (platform === 'instagram' || /instagram\.com/i.test(inputUrl)) {
           directResult = await scrapeInstagramDirectly(inputUrl);
+        } else if (platform === 'pinterest' || /(pinterest\.[a-z.]+|pin\.it)/i.test(inputUrl)) {
+          directResult = await scrapePinterestDirectly(inputUrl);
         }
 
         if (directResult && (directResult.url || directResult.video || (directResult.media && directResult.media.length > 0))) {
           const mediaUrl = directResult.url || directResult.video || directResult.media[0].url;
+          const isVideo = directResult.type === 'video' || (directResult.media && directResult.media.some(m => m.type === 'video'));
+          const normalizedMedia = (directResult.media && directResult.media.length > 0)
+            ? directResult.media.map((m, idx) => ({
+                label: m.quality || m.label || (m.type === 'video' ? 'HD Video' : (idx === 0 ? 'Image' : 'Cover Image')),
+                type: m.type || (m.url.match(/\.(jpg|jpeg|png|webp)/i) ? 'image' : 'video'),
+                url: m.url,
+              }))
+            : [{ label: isVideo ? 'HD Video' : 'Image', type: isVideo ? 'video' : 'image', url: mediaUrl }];
+
           return new Response(JSON.stringify({
             success: true,
             status: true,
@@ -80,9 +91,16 @@ export default {
             thumbnail: directResult.thumbnail || mediaUrl,
             url: mediaUrl,
             result: {
-              type: 'video',
-              video: mediaUrl,
-              media: directResult.media || [{ quality: 'HD Video', type: 'video', url: mediaUrl }],
+              type: isVideo ? 'video' : 'image',
+              video: isVideo ? (directResult.video || mediaUrl) : null,
+              media: directResult.media || [{ quality: isVideo ? 'HD Video' : 'Image', type: isVideo ? 'video' : 'image', url: mediaUrl }],
+            },
+            normalized: {
+              kind: 'media',
+              title: directResult.title || `${platform.toUpperCase()} Media`,
+              thumbnail: directResult.thumbnail || mediaUrl,
+              author: directResult.author || null,
+              media: normalizedMedia,
             },
           }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
         }
@@ -287,3 +305,116 @@ async function scrapeInstagramDirectly(inputUrl) {
 
   return null;
 }
+
+/** Direct Pinterest Scraper **/
+async function scrapePinterestDirectly(inputUrl) {
+  try {
+    let url = String(inputUrl || '').trim();
+    if (!url) return null;
+    if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+
+    const res = await fetch(url, {
+      redirect: 'follow',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+
+    let videoUrl = null;
+    let title = null;
+    let description = null;
+    let thumbnail = null;
+    let author = null;
+
+    // 1. JSON-LD structured data (often has VideoObject for video pins)
+    const ldMatches = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi) || [];
+    for (const tag of ldMatches) {
+      try {
+        const jsonContent = tag.replace(/<script[^>]*type=["']application\/ld\+json["'][^>]*>/i, '').replace(/<\/script>/i, '').trim();
+        const data = JSON.parse(jsonContent);
+        const items = Array.isArray(data) ? data : data['@graph'] ? data['@graph'] : [data];
+        for (const item of items) {
+          if (item && item['@type'] === 'VideoObject') {
+            if (item.contentUrl) videoUrl = item.contentUrl;
+            if (item.name && !title) title = item.name;
+            if (item.description && !description) description = item.description;
+            if (item.thumbnailUrl && !thumbnail) thumbnail = item.thumbnailUrl;
+            if (item.creator && item.creator.name && !author) author = item.creator.name;
+          }
+          if (item && (item['@type'] === 'SocialMediaPosting' || item['@type'] === 'ImageObject')) {
+            if (item.headline && !title) title = item.headline;
+            if (item.articleBody && !description) description = item.articleBody;
+            if (item.image && !thumbnail) thumbnail = item.image;
+            if (item.author && item.author.name && !author) author = item.author.name;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 2. Direct MP4 links from v1.pinimg.com
+    if (!videoUrl) {
+      const mp4Matches = html.match(/https?:\/\/(?:v1|v2|v3)\.pinimg\.com\/videos\/[^\s"'<>]+\.mp4/gi);
+      if (mp4Matches && mp4Matches.length > 0) {
+        videoUrl = mp4Matches.find(u => u.includes('720w') || u.includes('1080w')) || mp4Matches.find(u => u.includes('expMp4')) || mp4Matches[0];
+      }
+    }
+
+    // 3. Convert HLS .m3u8 to expMp4
+    if (!videoUrl) {
+      const m3u8Match = html.match(/https?:\/\/(?:v1|v2|v3)\.pinimg\.com\/videos\/([a-zA-Z0-9_-]+)\/hls\/([^\s"'<>]+\.m3u8)/i);
+      if (m3u8Match) {
+        const sub = m3u8Match[1];
+        const file = m3u8Match[2].replace('.m3u8', '_720w.mp4');
+        videoUrl = `https://v1.pinimg.com/videos/${sub}/expMp4/${file}`;
+      }
+    }
+
+    // 4. OpenGraph fallbacks
+    if (!title) {
+      const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i) ||
+                      html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']/i);
+      if (ogTitle) title = ogTitle[1].replace(/&amp;/g, '&');
+    }
+    if (!thumbnail) {
+      const ogImg = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i) ||
+                    html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i);
+      if (ogImg) thumbnail = ogImg[1].replace(/&amp;/g, '&');
+    }
+    if (!description) {
+      const ogDesc = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i) ||
+                     html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:description["']/i);
+      if (ogDesc) description = ogDesc[1].replace(/&amp;/g, '&');
+    }
+
+    if (thumbnail) thumbnail = thumbnail.replace(/\\/g, '');
+    if (videoUrl) videoUrl = videoUrl.replace(/\\/g, '');
+
+    const isVideo = Boolean(videoUrl);
+    const media = [];
+    if (videoUrl) {
+      media.push({ quality: 'HD Video', type: 'video', url: videoUrl });
+    }
+    if (thumbnail) {
+      media.push({ quality: videoUrl ? 'Cover Image' : 'Image', type: 'image', url: thumbnail });
+    }
+
+    if (!media.length) return null;
+
+    return {
+      title: title || 'Pinterest Media',
+      thumbnail: thumbnail || (videoUrl ? videoUrl : null),
+      url: media[0].url,
+      type: isVideo ? 'video' : 'image',
+      video: videoUrl || null,
+      author,
+      media,
+    };
+  } catch (_) {
+    return null;
+  }
+}
+

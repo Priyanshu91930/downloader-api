@@ -209,6 +209,206 @@ async function scrapeThreadsDirectly(inputUrl) {
   }
 }
 
+function isPinterestUrl(input) {
+  return /(?:https?:\/\/)?(?:[a-zA-Z0-9-]+\.)?(?:pinterest\.[a-z.]+|pin\.it)\/\S+/i.test(String(input || ""));
+}
+
+function extractPinId(inputUrl) {
+  const m = String(inputUrl || "").match(/pin\/(?:[^/]+--)?(\d+)/i) || String(inputUrl || "").match(/(\d{10,})/);
+  return m ? m[1] : null;
+}
+
+async function expandPinterestUrl(inputUrl) {
+  let url = String(inputUrl || "").trim();
+  if (!url) return url;
+  if (!/^https?:\/\//i.test(url)) {
+    url = `https://${url}`;
+  }
+
+  if (/pin\.it\//i.test(url)) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch(url, {
+        method: "HEAD",
+        redirect: "follow",
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (res && res.url && res.url !== url) {
+        url = res.url;
+      }
+    } catch (_) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 4000);
+        const res = await fetch(url, {
+          method: "GET",
+          redirect: "follow",
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          },
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        if (res && res.url && res.url !== url) {
+          url = res.url;
+        }
+      } catch (__) {}
+    }
+  }
+  return url;
+}
+
+async function scrapePinterestDirectly(inputUrl) {
+  try {
+    const resolvedUrl = await expandPinterestUrl(inputUrl);
+    const res = await fetch(resolvedUrl, {
+      redirect: "follow",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+
+    let videoUrl = null;
+    let title = null;
+    let description = null;
+    let thumbnail = null;
+    let author = null;
+    let authorUsername = null;
+    const pinId = extractPinId(res.url) || extractPinId(resolvedUrl) || extractPinId(inputUrl);
+
+    // 1. JSON-LD structured data (contains VideoObject when pin has video)
+    const ldMatches = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi) || [];
+    for (const tag of ldMatches) {
+      try {
+        const jsonContent = tag
+          .replace(/<script[^>]*type=["']application\/ld\+json["'][^>]*>/i, "")
+          .replace(/<\/script>/i, "")
+          .trim();
+        const data = JSON.parse(jsonContent);
+        const items = Array.isArray(data) ? data : data["@graph"] ? data["@graph"] : [data];
+        for (const item of items) {
+          if (item && item["@type"] === "VideoObject") {
+            if (item.contentUrl) videoUrl = item.contentUrl;
+            if (item.name && !title) title = item.name;
+            if (item.description && !description) description = item.description;
+            if (item.thumbnailUrl && !thumbnail) thumbnail = item.thumbnailUrl;
+            if (item.creator) {
+              if (item.creator.name && !author) author = item.creator.name;
+              if (item.creator.alternateName && !authorUsername) authorUsername = item.creator.alternateName;
+            }
+          }
+          if (item && (item["@type"] === "SocialMediaPosting" || item["@type"] === "ImageObject")) {
+            if (item.headline && !title) title = item.headline;
+            if (item.articleBody && !description) description = item.articleBody;
+            if (item.image && !thumbnail) thumbnail = item.image;
+            if (item.author) {
+              if (item.author.name && !author) author = item.author.name;
+              if (item.author.alternateName && !authorUsername) authorUsername = item.author.alternateName;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 2. Direct MP4 links from v1.pinimg.com
+    if (!videoUrl) {
+      const mp4Matches = html.match(/https?:\/\/(?:v1|v2|v3)\.pinimg\.com\/videos\/[^\s"'<>]+\.mp4/gi);
+      if (mp4Matches && mp4Matches.length > 0) {
+        videoUrl =
+          mp4Matches.find((u) => u.includes("720w") || u.includes("1080w")) ||
+          mp4Matches.find((u) => u.includes("expMp4")) ||
+          mp4Matches[0];
+      }
+    }
+
+    // 3. Convert HLS .m3u8 to expMp4
+    if (!videoUrl) {
+      const m3u8Match = html.match(/https?:\/\/(?:v1|v2|v3)\.pinimg\.com\/videos\/([a-zA-Z0-9_-]+)\/hls\/([^\s"'<>]+\.m3u8)/i);
+      if (m3u8Match) {
+        const sub = m3u8Match[1];
+        const file = m3u8Match[2].replace(".m3u8", "_720w.mp4");
+        videoUrl = `https://v1.pinimg.com/videos/${sub}/expMp4/${file}`;
+      }
+    }
+
+    // 4. OpenGraph fallbacks
+    if (!title) {
+      const ogTitle =
+        html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i) ||
+        html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']/i);
+      if (ogTitle) title = ogTitle[1].replace(/&amp;/g, "&");
+    }
+    if (!thumbnail) {
+      const ogImg =
+        html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i) ||
+        html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i);
+      if (ogImg) thumbnail = ogImg[1].replace(/&amp;/g, "&");
+    }
+    if (!description) {
+      const ogDesc =
+        html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i) ||
+        html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:description["']/i);
+      if (ogDesc) description = ogDesc[1].replace(/&amp;/g, "&");
+    }
+
+    if (thumbnail) thumbnail = thumbnail.replace(/\\/g, "");
+    if (videoUrl) videoUrl = videoUrl.replace(/\\/g, "");
+
+    const bestImage = thumbnail;
+    if (!videoUrl && !bestImage) return null;
+
+    return {
+      developer: "DIRECT_SCRAPER",
+      status: true,
+      result: {
+        success: true,
+        developer: "@downloader-api",
+        result: {
+          id: pinId,
+          title: title || "Pinterest Media",
+          description: description || title || "",
+          link: resolvedUrl,
+          image: bestImage,
+          images: bestImage
+            ? {
+                orig: { url: bestImage },
+                "736x": { url: bestImage },
+              }
+            : null,
+          video_url: videoUrl || null,
+          videos: videoUrl
+            ? {
+                V_720P: {
+                  url: videoUrl,
+                },
+              }
+            : null,
+          user: author
+            ? {
+                username: authorUsername || author,
+                full_name: author,
+              }
+            : null,
+        },
+      },
+    };
+  } catch (err) {
+    return null;
+  }
+}
+
 async function buildCandidates(platform, rawQuery, normalizedQuery) {
   if (platform === "youtube") {
     const id = extractYouTubeId(rawQuery);
@@ -239,6 +439,15 @@ async function buildCandidates(platform, rawQuery, normalizedQuery) {
 
     const list = [threadsComClean, threadsNetClean, cleanExpanded, expanded, rawQuery];
     return [...new Set(list.filter(Boolean))];
+  }
+
+  if (platform === "pinterest" || ((platform === "aio" || platform === "pinterest") && isPinterestUrl(rawQuery))) {
+    if (isPinterestUrl(rawQuery)) {
+      const expanded = await expandPinterestUrl(rawQuery);
+      const cleanExpanded = expanded.split("?")[0];
+      const list = [cleanExpanded, expanded, rawQuery];
+      return [...new Set(list.filter(Boolean))];
+    }
   }
 
   return [normalizedQuery];
@@ -302,9 +511,26 @@ async function download(req, res) {
         fn(candidate),
         candidateTimeoutMs,
         `The ${platform} downloader took too long.`
-      ).then((attempt) => {
+      ).then(async (attempt) => {
         if (attempt && !attempt.error && attempt.status !== false && attempt.success !== false) {
-          const attemptNormalized = normalizeResult(platform, attempt);
+          // If Pinterest returns a pin without video_url, check if it's actually a video pin
+          if ((platform === "pinterest" || platform === "aio") && isPinterestUrl(candidate)) {
+            const pin = (attempt.result?.result && typeof attempt.result.result === "object")
+              ? attempt.result.result
+              : attempt.result;
+            if (pin && typeof pin === "object" && !pin.video_url && (!pin.videos || !Object.keys(pin.videos).length)) {
+              try {
+                const direct = await scrapePinterestDirectly(candidate);
+                const directPin = direct?.result?.result;
+                if (directPin?.video_url) {
+                  pin.video_url = directPin.video_url;
+                  pin.videos = directPin.videos;
+                }
+              } catch (_) {}
+            }
+          }
+          const normPlatform = (platform === "aio" && isPinterestUrl(candidate)) ? "pinterest" : platform;
+          const attemptNormalized = normalizeResult(normPlatform, attempt);
           if (attemptNormalized) return attempt;
         }
         throw new Error("No valid media found in candidate response.");
@@ -324,6 +550,23 @@ async function download(req, res) {
             if (attemptNormalized) return attempt;
           }
           throw new Error("No valid media found in direct threads scrape.");
+        })
+      );
+    }
+
+    // Direct HTML/JSON-LD scraper for Pinterest
+    if ((platform === "pinterest" || platform === "aio") && isPinterestUrl(candidate) && candidate === selectedCandidates[0]) {
+      tasks.push(
+        withTimeout(
+          scrapePinterestDirectly(candidate),
+          candidateTimeoutMs,
+          `The direct pinterest scraper took too long.`
+        ).then((attempt) => {
+          if (attempt && attempt.result) {
+            const attemptNormalized = normalizeResult("pinterest", attempt);
+            if (attemptNormalized) return attempt;
+          }
+          throw new Error("No valid media found in direct pinterest scrape.");
         })
       );
     }
@@ -359,6 +602,8 @@ async function download(req, res) {
     truncateListResult(platform, data, appliedLimit);
   }
 
+  const normPlatform = (platform === "aio" && isPinterestUrl(rawQuery)) ? "pinterest" : platform;
+
   res.json({
     success: true,
     platform,
@@ -371,7 +616,7 @@ async function download(req, res) {
     // platforms without a handler yet, or if nothing usable was found; the
     // frontend falls back to its generic parser in that case.
     result: data,
-    normalized: normalizeResult(platform, data),
+    normalized: normalizeResult(normPlatform, data),
   });
 }
 
