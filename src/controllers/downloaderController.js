@@ -539,7 +539,7 @@ async function download(req, res) {
       );
     }
 
-    if (platform !== "twitch" && platform !== "kick" && typeof fn === "function") {
+    if (platform !== "twitch" && platform !== "kick" && !isTwitchUrl(candidate) && !isKickUrl(candidate) && typeof fn === "function") {
       tasks.push(
         withTimeout(
           fn(candidate),
