@@ -21,6 +21,7 @@ const PLATFORMS = {
     note: "Auto-detects the platform from the URL and delegates to the matching downloader.",
     deprecated: true,
   },
+  twitch: { fn: "twitch", queryType: "url", example: "https://www.twitch.tv/channel/clip/xxxxxx or /videos/xxxxxx" },
   tiktok: { fn: "ttdl", queryType: "url", example: "https://www.tiktok.com/@user/video/1234567890" },
   instagram: { fn: "igdl", queryType: "url", example: "https://www.instagram.com/reel/xxxxxxxxxxx/" },
   facebook: { fn: "fbdown", queryType: "url", example: "https://www.facebook.com/watch/?v=1234567890" },

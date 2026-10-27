@@ -5,6 +5,7 @@ const ApiError = require("../utils/ApiError");
 const { requireInputForQueryType, requireHttpUrl, requireNonEmptyString } = require("../utils/validate");
 const withTimeout = require("../utils/withTimeout");
 const { normalizeResult, truncateListResult, hasHandler } = require("../utils/normalizeResult");
+const { isTwitchUrl, scrapeTwitchDirectly } = require("../services/twitchService");
 
 // Applies to platforms with `supportsLimit: true` (youtube-search, pinterest
 // search) — these can return dozens of hits per query, most of which nobody
@@ -55,7 +56,7 @@ function parseLimit(rawLimit) {
  */
 function listPlatforms(req, res) {
   const platforms = Object.entries(PLATFORMS)
-    .filter(([key, cfg]) => typeof btch[cfg.fn] === "function")
+    .filter(([key, cfg]) => key === "twitch" || typeof btch[cfg.fn] === "function")
     .map(([key, value]) => ({
       key,
       queryType: value.queryType,
@@ -478,7 +479,7 @@ async function download(req, res) {
   const rawQuery = requireInputForQueryType(input, config.queryType, paramName);
 
   const fn = btch[config.fn];
-  if (typeof fn !== "function") {
+  if (platform !== "twitch" && typeof fn !== "function") {
     // Provide a clearer message including available functions for debugging.
     const available = Object.keys(btch).filter((k) => typeof btch[k] === "function");
     throw new ApiError(404, `Downloader function "${config.fn}" is not available in btch-downloader. Available: ${available.join(", ")}`);
@@ -505,48 +506,52 @@ async function download(req, res) {
   const tasks = [];
 
   for (const candidate of selectedCandidates) {
-    // Primary downloader function
-    tasks.push(
-      withTimeout(
-        fn(candidate),
-        candidateTimeoutMs,
-        `The ${platform} downloader took too long.`
-      ).then(async (attempt) => {
-        if (attempt && !attempt.error && attempt.status !== false && attempt.success !== false) {
-          // If Pinterest returns a pin without video_url, check if it's actually a video pin
-          if ((platform === "pinterest" || platform === "aio") && isPinterestUrl(candidate)) {
-            const pin = (attempt.result?.result && typeof attempt.result.result === "object")
-              ? attempt.result.result
-              : attempt.result;
-            if (pin && typeof pin === "object" && !pin.video_url && (!pin.videos || !Object.keys(pin.videos).length)) {
-              try {
-                const direct = await scrapePinterestDirectly(candidate);
-                const directPin = direct?.result?.result;
-                if (directPin?.video_url) {
-                  pin.video_url = directPin.video_url;
-                  pin.videos = directPin.videos;
-                }
-              } catch (_) {}
+    if (platform === "twitch" || ((platform === "aio" || platform === "twitch") && isTwitchUrl(candidate))) {
+      tasks.push(
+        withTimeout(
+          scrapeTwitchDirectly(candidate),
+          candidateTimeoutMs,
+          "The Twitch scraper took too long."
+        ).then((attempt) => {
+          if (attempt && attempt.result) {
+            const attemptNormalized = normalizeResult("twitch", attempt);
+            if (attemptNormalized) return attempt;
+          }
+          throw new Error("No valid media found in Twitch scrape.");
+        })
+      );
+    }
+
+    if (platform !== "twitch" && typeof fn === "function") {
+      tasks.push(
+        withTimeout(
+          fn(candidate),
+          candidateTimeoutMs,
+          `The ${platform} downloader took too long to respond for candidate: ${candidate}`
+        ).then((attempt) => {
+          if (!attempt) {
+            throw new Error("Empty downloader response.");
+          }
+          if (!LIST_PLATFORMS.has(platform)) {
+            const attemptNormalized = normalizeResult(platform, attempt);
+            if (!attemptNormalized) {
+              throw new Error("No usable media returned by the downloader.");
             }
           }
-          const normPlatform = (platform === "aio" && isPinterestUrl(candidate)) ? "pinterest" : platform;
-          const attemptNormalized = normalizeResult(normPlatform, attempt);
-          if (attemptNormalized) return attempt;
-        }
-        throw new Error("No valid media found in candidate response.");
-      })
-    );
+          return attempt;
+        })
+      );
+    }
 
-    // Direct HTML scraper fallback for Threads
-    if (platform === "threads" && candidate === selectedCandidates[0]) {
+    if ((platform === "threads" || platform === "aio") && /(?:threads\.com|threads\.net)/i.test(candidate) && candidate === selectedCandidates[0]) {
       tasks.push(
         withTimeout(
           scrapeThreadsDirectly(candidate),
           candidateTimeoutMs,
-          `The direct threads scraper took too long.`
+          "The direct threads scraper took too long."
         ).then((attempt) => {
           if (attempt && attempt.result) {
-            const attemptNormalized = normalizeResult(platform, attempt);
+            const attemptNormalized = normalizeResult("threads", attempt);
             if (attemptNormalized) return attempt;
           }
           throw new Error("No valid media found in direct threads scrape.");
@@ -554,13 +559,12 @@ async function download(req, res) {
       );
     }
 
-    // Direct HTML/JSON-LD scraper for Pinterest
     if ((platform === "pinterest" || platform === "aio") && isPinterestUrl(candidate) && candidate === selectedCandidates[0]) {
       tasks.push(
         withTimeout(
           scrapePinterestDirectly(candidate),
           candidateTimeoutMs,
-          `The direct pinterest scraper took too long.`
+          "The direct pinterest scraper took too long."
         ).then((attempt) => {
           if (attempt && attempt.result) {
             const attemptNormalized = normalizeResult("pinterest", attempt);
@@ -602,7 +606,7 @@ async function download(req, res) {
     truncateListResult(platform, data, appliedLimit);
   }
 
-  const normPlatform = (platform === "aio" && isPinterestUrl(rawQuery)) ? "pinterest" : platform;
+  const normPlatform = (platform === "aio" && isPinterestUrl(rawQuery)) ? "pinterest" : (platform === "aio" && isTwitchUrl(rawQuery)) ? "twitch" : platform;
 
   res.json({
     success: true,
