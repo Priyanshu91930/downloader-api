@@ -6,6 +6,7 @@ const { requireInputForQueryType, requireHttpUrl, requireNonEmptyString } = requ
 const withTimeout = require("../utils/withTimeout");
 const { normalizeResult, truncateListResult, hasHandler } = require("../utils/normalizeResult");
 const { isTwitchUrl, scrapeTwitchDirectly } = require("../services/twitchService");
+const { isKickUrl, scrapeKickDirectly } = require("../services/kickService");
 
 // Applies to platforms with `supportsLimit: true` (youtube-search, pinterest
 // search) — these can return dozens of hits per query, most of which nobody
@@ -56,7 +57,7 @@ function parseLimit(rawLimit) {
  */
 function listPlatforms(req, res) {
   const platforms = Object.entries(PLATFORMS)
-    .filter(([key, cfg]) => key === "twitch" || typeof btch[cfg.fn] === "function")
+    .filter(([key, cfg]) => key === "twitch" || key === "kick" || typeof btch[cfg.fn] === "function")
     .map(([key, value]) => ({
       key,
       queryType: value.queryType,
@@ -479,7 +480,7 @@ async function download(req, res) {
   const rawQuery = requireInputForQueryType(input, config.queryType, paramName);
 
   const fn = btch[config.fn];
-  if (platform !== "twitch" && typeof fn !== "function") {
+  if (platform !== "twitch" && platform !== "kick" && typeof fn !== "function") {
     // Provide a clearer message including available functions for debugging.
     const available = Object.keys(btch).filter((k) => typeof btch[k] === "function");
     throw new ApiError(404, `Downloader function "${config.fn}" is not available in btch-downloader. Available: ${available.join(", ")}`);
@@ -506,6 +507,22 @@ async function download(req, res) {
   const tasks = [];
 
   for (const candidate of selectedCandidates) {
+    if (platform === "kick" || ((platform === "aio" || platform === "kick") && isKickUrl(candidate))) {
+      tasks.push(
+        withTimeout(
+          scrapeKickDirectly(candidate),
+          candidateTimeoutMs,
+          "The Kick scraper took too long."
+        ).then((attempt) => {
+          if (attempt && attempt.result) {
+            const attemptNormalized = normalizeResult("kick", attempt);
+            if (attemptNormalized) return attempt;
+          }
+          throw new Error("No valid media found in Kick scrape.");
+        })
+      );
+    }
+
     if (platform === "twitch" || ((platform === "aio" || platform === "twitch") && isTwitchUrl(candidate))) {
       tasks.push(
         withTimeout(
@@ -522,7 +539,7 @@ async function download(req, res) {
       );
     }
 
-    if (platform !== "twitch" && typeof fn === "function") {
+    if (platform !== "twitch" && platform !== "kick" && typeof fn === "function") {
       tasks.push(
         withTimeout(
           fn(candidate),
@@ -606,7 +623,7 @@ async function download(req, res) {
     truncateListResult(platform, data, appliedLimit);
   }
 
-  const normPlatform = (platform === "aio" && isPinterestUrl(rawQuery)) ? "pinterest" : (platform === "aio" && isTwitchUrl(rawQuery)) ? "twitch" : platform;
+  const normPlatform = (platform === "aio" && isPinterestUrl(rawQuery)) ? "pinterest" : (platform === "aio" && isTwitchUrl(rawQuery)) ? "twitch" : (platform === "aio" && isKickUrl(rawQuery)) ? "kick" : platform;
 
   res.json({
     success: true,

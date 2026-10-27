@@ -327,7 +327,29 @@ function twitch(raw) {
   };
 }
 
+// --- kick: videos, vods, clips ---
+function kick(raw) {
+  if (!raw) return null;
+  const res = raw.result || raw;
+  const mediaList = Array.isArray(res.media) ? res.media : [];
+  const media = mediaList.map((m) => ({
+    label: m.label || (m.quality ? `Video ${m.quality}` : "Video"),
+    type: "video",
+    url: m.url,
+    extension: m.extension || (m.url && m.url.includes(".m3u8") ? "m3u8" : "mp4"),
+  }));
+  return {
+    kind: "media",
+    title: res.title || raw.title || null,
+    thumbnail: res.thumbnail || raw.thumbnail || null,
+    author: res.author || raw.author || null,
+    duration: res.duration || raw.duration || null,
+    media,
+  };
+}
+
 const HANDLERS = {
+  kick,
   twitch,
   youtube,
   "youtube-search": youtubeSearch,
