@@ -45,6 +45,25 @@ app.use(
   })
 );
 
+// --- Dynamic Privacy Policy (Google Play Compliant) ---
+const { renderPrivacyPolicyHtml } = require("../vercel-gateway/src/privacyPolicy");
+app.get(
+  [
+    "/privacy",
+    "/privacy-policy",
+    "/privacy/:platform",
+    "/privacy-policy/:platform",
+    "/:platform(twitch|kick|instagram|threads|pinterest)",
+  ],
+  (req, res) => {
+    const slug = req.params.platform || req.query.platform || "twitch";
+    const html = renderPrivacyPolicyHtml(slug, req.query);
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=86400");
+    return res.send(html);
+  }
+);
+
 // --- Health check ---
 app.get("/api/health", (req, res) => {
   res.json({ success: true, status: "ok", uptime: process.uptime() });
