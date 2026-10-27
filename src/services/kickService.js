@@ -1,9 +1,10 @@
 /**
- * Kick extractor for Videos, VODs, and Clips without FFmpeg.
- * Extracts video metadata and master HLS playlist from Kick.
+ * Pure JavaScript Kick Extractor (Zero Python / Zero FFmpeg / 100% Vercel Ready)
+ * Uses Kick's official mobile client endpoints to bypass Cloudflare bot challenges
+ * and directly extract VOD / stream master playlists with all resolutions.
  */
 
-const { spawn } = require("child_process");
+const KICK_MOBILE_UA = "okhttp/4.9.2 KickAndroid/1.0.0";
 
 function isKickUrl(url) {
   return /(?:kick\.com)/i.test(String(url || ""));
@@ -15,90 +16,119 @@ function extractKickVideoId(url) {
   return m ? m[1] : null;
 }
 
-/**
- * Extracts Kick VOD streams using lightweight yt-dlp dump-json with curl-cffi TLS impersonation.
- */
-function scrapeKickWithYtDlp(url) {
-  return new Promise((resolve) => {
-    const pythonExe = "py";
-    const args = ["-3.10", "-m", "yt_dlp", "--dump-json", "--no-warnings", "--no-playlist", url];
+function extractKickClipSlug(url) {
+  const u = String(url || "");
+  const m = u.match(/kick\.com\/[^/]+[?&]clip=([A-Za-z0-9_-]+)|kick\.com\/clips?\/([A-Za-z0-9_-]+)/i);
+  return m ? (m[1] || m[2]) : null;
+}
 
-    const child = spawn(pythonExe, args);
-    let stdoutData = "";
-    let stderrData = "";
+async function scrapeKickPureJs(url) {
+  const videoId = extractKickVideoId(url);
+  if (!videoId) {
+    return null;
+  }
 
-    child.stdout.on("data", (data) => {
-      stdoutData += data.toString("utf8");
-    });
+  const playbackEndpoint = `https://web.kick.com/api/v1/stream/${videoId}/playback`;
 
-    child.stderr.on("data", (data) => {
-      stderrData += data.toString("utf8");
-    });
-
-    child.on("close", (code) => {
-      if (code !== 0 || !stdoutData.trim()) {
-        return resolve(null);
-      }
-
-      try {
-        const info = JSON.parse(stdoutData.trim());
-        const formats = Array.isArray(info.formats) ? info.formats : [];
-        const media = [];
-
-        for (const f of formats) {
-          if (!f.url) continue;
-          const height = f.height || (f.resolution ? parseInt(f.resolution.split("x")[1], 10) : null);
-          const fps = f.fps ? Math.round(f.fps) : 30;
-          const qualityLabel = f.format_id || (height ? `${height}p${fps >= 50 ? "60" : ""}` : "HD");
-
-          media.push({
-            label: `HLS Stream (${qualityLabel})`,
-            quality: qualityLabel,
-            type: "video",
-            extension: "m3u8",
-            url: f.url,
-          });
-        }
-
-        if (!media.length && info.url) {
-          media.push({
-            label: "HLS Stream (Source)",
-            quality: "Source",
-            type: "video",
-            extension: "m3u8",
-            url: info.url,
-          });
-        }
-
-        resolve({
-          status: true,
-          title: info.title || "Kick Video",
-          thumbnail: info.thumbnail || null,
-          duration: info.duration || 0,
-          author: info.uploader || info.channel || null,
-          result: {
-            id: info.id || extractKickVideoId(url),
-            title: info.title,
-            thumbnail: info.thumbnail,
-            duration: info.duration,
-            author: info.uploader || info.channel,
-            type: "video",
-            media,
-          },
-        });
-      } catch (err) {
-        resolve(null);
-      }
-    });
-
-    child.on("error", () => {
-      resolve(null);
-    });
+  const pbRes = await fetch(playbackEndpoint, {
+    method: "POST",
+    headers: {
+      "User-Agent": KICK_MOBILE_UA,
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      video_player: { player: {} },
+      video_session: {},
+      user_session: { non_personalised_ads: true },
+    }),
   });
+
+  if (!pbRes.ok) {
+    return null;
+  }
+
+  const pbData = await pbRes.json();
+  const vSession = pbData.video_session || {};
+  const playbackUrl = pbData.playback_url || {};
+  const manifestUrl = playbackUrl.vod || playbackUrl.live || "";
+
+  if (!manifestUrl) {
+    return null;
+  }
+
+  const title = vSession.video_title || "Kick Video";
+  const author = vSession.video_series || null;
+  const duration = vSession.video_duration || 0;
+  const thumbnail = playbackUrl.thumbnail || null;
+
+  const media = [];
+
+  try {
+    const maniRes = await fetch(manifestUrl, {
+      headers: {
+        "User-Agent": KICK_MOBILE_UA,
+      },
+    });
+
+    if (maniRes.ok) {
+      const manifestText = await maniRes.text();
+      const lines = manifestText.split("\n");
+      let currentQuality = "HD";
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.startsWith("#EXT-X-STREAM-INF:")) {
+          const groupMatch = line.match(/VIDEO="([^"]+)"/);
+          const resMatch = line.match(/RESOLUTION=\d+x(\d+)/);
+          if (groupMatch) {
+            currentQuality = groupMatch[1];
+          } else if (resMatch) {
+            currentQuality = `${resMatch[1]}p`;
+          }
+        } else if (line.startsWith("http://") || line.startsWith("https://")) {
+          media.push({
+            label: `HLS Stream (${currentQuality})`,
+            quality: currentQuality,
+            type: "video",
+            extension: "m3u8",
+            url: line,
+          });
+        }
+      }
+    }
+  } catch (_) {}
+
+  if (!media.length) {
+    media.push({
+      label: "Master HLS Playlist",
+      quality: "Auto",
+      type: "video",
+      extension: "m3u8",
+      url: manifestUrl,
+    });
+  }
+
+  return {
+    status: true,
+    title,
+    thumbnail,
+    duration,
+    author,
+    result: {
+      id: videoId,
+      title,
+      thumbnail,
+      duration,
+      author,
+      type: "video",
+      media,
+    },
+  };
 }
 
 async function scrapeKickDirectly(url) {
-  return scrapeKickWithYtDlp(url);
+  return scrapeKickPureJs(url);
 }
 
 module.exports = {
