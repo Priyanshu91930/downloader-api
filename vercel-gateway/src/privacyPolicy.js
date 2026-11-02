@@ -7,6 +7,8 @@ const PLATFORM_CONFIGS = {
   twitch: {
     appName: "Twitch Video & Clip Downloader",
     shortName: "Twitch Downloader",
+    packageName: "com.twitchvideodownloader.app",
+    developerName: "Swadeshi App Studio",
     platformName: "Twitch",
     officialDomain: "twitch.tv",
     contentType: "clips, livestreams, and VODs",
@@ -85,17 +87,19 @@ function getPlatformConfig(slug) {
 
 function renderPrivacyPolicyHtml(slug, query = {}) {
   const cfg = getPlatformConfig(slug);
-  const appName = query.appName || cfg.appName;
-  const developerEmail = query.email || process.env.DEVELOPER_EMAIL || "support@downloaderapp.com";
-  const updatedDate = "October 2026";
+  const appName = query.appName || query.app || cfg.appName;
+  const developerName = query.dev || query.developer || query.entity || cfg.developerName || process.env.DEVELOPER_NAME || "Swadeshi App Studio";
+  const packageName = query.pkg || query.package || query.appId || cfg.packageName || process.env.PACKAGE_NAME || "com.twitchvideodownloader.app";
+  const developerEmail = query.email || query.contact || process.env.DEVELOPER_EMAIL || "solankipriyanshu94@gmail.com";
+  const updatedDate = "November 2026";
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Privacy Policy - ${appName}</title>
-  <meta name="description" content="Privacy Policy and Terms of Use for ${appName} - compliant with Google Play Console policies." />
+  <title>Privacy Policy - ${appName} (${developerName})</title>
+  <meta name="description" content="Privacy Policy and Terms of Use for ${appName} by ${developerName} - fully compliant with Google Play Console Developer Policies." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -109,6 +113,8 @@ function renderPrivacyPolicyHtml(slug, query = {}) {
       --text-muted: #9ca3af;
       --warning-bg: rgba(245, 158, 11, 0.08);
       --warning-border: #f59e0b;
+      --id-bg: rgba(255, 255, 255, 0.03);
+      --id-border: rgba(255, 255, 255, 0.08);
       --font-main: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
       --font-mono: "JetBrains Mono", monospace;
     }
@@ -155,13 +161,58 @@ function renderPrivacyPolicyHtml(slug, query = {}) {
     .meta {
       color: var(--text-muted);
       font-size: 0.9rem;
-      margin-bottom: 32px;
-      padding-bottom: 24px;
+      margin-bottom: 24px;
+      padding-bottom: 20px;
       border-bottom: 1px solid var(--card-border);
       display: flex;
       flex-wrap: wrap;
       gap: 16px;
       justify-content: space-between;
+    }
+    .id-card {
+      background: var(--id-bg);
+      border: 1px solid var(--id-border);
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 28px;
+    }
+    .id-card-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--accent);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .id-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px 20px;
+      font-size: 0.92rem;
+    }
+    .id-row {
+      display: flex;
+      flex-direction: column;
+    }
+    .id-label {
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 2px;
+    }
+    .id-value {
+      color: #ffffff;
+      font-weight: 600;
+      word-break: break-all;
+    }
+    .id-value code {
+      font-family: var(--font-mono);
+      color: var(--accent);
+      font-size: 0.88rem;
     }
     .alert-box {
       background: var(--warning-bg);
@@ -243,11 +294,35 @@ function renderPrivacyPolicyHtml(slug, query = {}) {
 </head>
 <body>
   <div class="container">
-    <div class="badge">${cfg.icon} Google Play Compliant Policy</div>
+    <div class="badge">${cfg.icon} Google Play Developer Policy Compliant</div>
     <h1>Privacy Policy & Terms of Service</h1>
     <div class="meta">
       <span>Application: <strong>${appName}</strong></span>
       <span>Effective Date: <strong>${updatedDate}</strong></span>
+    </div>
+
+    <!-- Explicit Google Play Developer & App Identifier Section -->
+    <div class="id-card">
+      <div class="id-card-title">📋 Google Play Store Listing &amp; Developer Details</div>
+      <div class="id-grid">
+        <div class="id-row">
+          <span class="id-label">Application Title</span>
+          <span class="id-value">${appName}</span>
+        </div>
+        ${packageName ? `
+        <div class="id-row">
+          <span class="id-label">Package Name (Application ID)</span>
+          <span class="id-value"><code>${packageName}</code></span>
+        </div>` : ""}
+        <div class="id-row">
+          <span class="id-label">Developer / Publisher Name</span>
+          <span class="id-value">${developerName}</span>
+        </div>
+        <div class="id-row">
+          <span class="id-label">Developer Contact Email</span>
+          <span class="id-value"><a href="mailto:${developerEmail}" style="color:var(--accent); text-decoration:none;">${developerEmail}</a></span>
+        </div>
+      </div>
     </div>
 
     <!-- Mandatory Third Party Disclaimer for Google Play -->
@@ -256,47 +331,50 @@ function renderPrivacyPolicyHtml(slug, query = {}) {
       <p>${cfg.disclaimer}</p>
     </div>
 
-    <h2>1. Introduction</h2>
+    <h2>1. Introduction & Publisher Identification</h2>
     <p>
-      Welcome to <strong>${appName}</strong> ("we," "our," or "the App"). We are committed to protecting your privacy and transparently disclosing how our application operates. 
-      This Privacy Policy describes our practices concerning data collection, app permissions, and third-party interactions when you use our mobile application.
+      This Privacy Policy governs the mobile application <strong>${appName}</strong>${packageName ? ` (Package Name: <code>${packageName}</code>)` : ""}, which is developed, published, and maintained by <strong>${developerName}</strong> ("Developer", "we", "our", or "us") on the Google Play Store.
+    </p>
+    <p>
+      We are dedicated to safeguarding your privacy and ensuring transparency regarding our app's operations. This policy explicitly describes how our application operates, our zero-data collection architecture, device permissions, and our adherence to Google Play Developer Program Policies.
     </p>
 
     <h2>2. Data Collection & Privacy First Philosophy</h2>
     <p>
-      <strong>We do NOT collect, store, sell, or transmit any Personally Identifiable Information (PII).</strong>
+      <strong>We do NOT collect, store, sell, monetize, or transmit any Personally Identifiable Information (PII) or user data.</strong>
     </p>
     <ul>
-      <li><strong>No Account Required:</strong> You can use all features of the App without registering, logging in, or providing personal credentials.</li>
-      <li><strong>No Twitch / Third-Party Credentials Collected:</strong> We never ask for your passwords, login cookies, or account credentials.</li>
-      <li><strong>No Server Logs of Personal Activity:</strong> We do not track or associate media queries with your personal identity or device IDs.</li>
+      <li><strong>No Account Required:</strong> You can use all features of the App without registering, logging in, or providing any personal details.</li>
+      <li><strong>No Credentials or Cookies:</strong> We never request, read, or store passwords, tokens, cookies, or account credentials.</li>
+      <li><strong>No Tracking or Profiling:</strong> We do not track user activity, associate media downloads with device IDs, or build behavioral profiles.</li>
+      <li><strong>No Server-Side Media Retention:</strong> Downloaded media is transferred directly to your local device storage and is never retained on our servers.</li>
     </ul>
 
     <h2>3. Android Permissions & Why We Need Them</h2>
     <p>
-      The App requests only the bare minimum permissions necessary to perform its core functions (fetching and saving ${cfg.contentType} locally to your device storage):
+      The App requests only the minimum runtime permissions strictly required to provide its core utility functions (saving ${cfg.contentType} locally to your device storage):
     </p>
     
     <div class="permission-item">
       <code>INTERNET &amp; ACCESS_NETWORK_STATE</code>
-      <p style="margin-top:6px; margin-bottom:0;">Required to connect to public media servers, fetch metadata, and download media files chosen by the user.</p>
+      <p style="margin-top:6px; margin-bottom:0;">Required to access public media servers, fetch metadata, and download media files initiated directly by you.</p>
     </div>
 
     <div class="permission-item">
       <code>WRITE_EXTERNAL_STORAGE / READ_MEDIA_VIDEO</code>
-      <p style="margin-top:6px; margin-bottom:0;">Required on compatible Android versions solely to save downloaded video/audio files directly into your device's Gallery or Download folder.</p>
+      <p style="margin-top:6px; margin-bottom:0;">Required on compatible Android operating systems solely to save downloaded video/audio files directly into your device's Downloads or Gallery directory.</p>
     </div>
 
     <div class="permission-item">
       <code>FOREGROUND_SERVICE &amp; POST_NOTIFICATIONS</code>
-      <p style="margin-top:6px; margin-bottom:0;">Required to show download progress bars in your notification tray and ensure downloads complete reliably in the background.</p>
+      <p style="margin-top:6px; margin-bottom:0;">Required on Android 13+ to display ongoing download progress in your system notification tray and ensure downloads complete reliably in the background.</p>
     </div>
 
     <h2>4. Intellectual Property & Fair Use Policy</h2>
     <p>${cfg.copyrightNotice}</p>
     <ul>
-      <li>The App functions solely as a client-side utility tool to retrieve publicly accessible streams and media files.</li>
-      <li>Users are solely responsible for ensuring they possess the right, license, or fair-use justification to download and store any media.</li>
+      <li>The App functions solely as a client-side tool to retrieve publicly accessible streams and media files.</li>
+      <li>Users are solely responsible for ensuring they possess the right, license, or fair-use authorization to download and store any content.</li>
       <li>We strictly discourage and do not condone the unauthorized downloading, distribution, or re-uploading of copyrighted materials.</li>
     </ul>
 
@@ -319,16 +397,23 @@ function renderPrivacyPolicyHtml(slug, query = {}) {
       We may periodically update this Privacy Policy to comply with Google Play Policy updates and legal requirements. Any modifications will take effect immediately upon updating this page.
     </p>
 
-    <h2>8. Contact Information</h2>
+    <h2>8. Developer &amp; Legal Entity Contact Information</h2>
     <p>
-      If you have questions, feedback, or copyright concerns regarding this Privacy Policy or the App, please contact our support team at:
+      If you have questions, feedback, or inquiries regarding this Privacy Policy, your rights, or the application, please reach out directly:
     </p>
+    <p style="margin-bottom: 6px;">
+      <strong>Developer / Publisher:</strong> ${developerName}
+    </p>
+    <p style="margin-bottom: 6px;">
+      <strong>Application Title:</strong> ${appName}
+    </p>
+    ${packageName ? `<p style="margin-bottom: 6px;"><strong>Package Name:</strong> <code>${packageName}</code></p>` : ""}
     <p>
-      <strong>Developer Support:</strong> <a href="mailto:${developerEmail}" style="color:var(--accent); font-weight:600;">${developerEmail}</a>
+      <strong>Developer Contact Email:</strong> <a href="mailto:${developerEmail}" style="color:var(--accent); font-weight:600;">${developerEmail}</a>
     </p>
 
     <div class="footer">
-      <p>&copy; ${new Date().getFullYear()} ${appName}. All rights reserved.</p>
+      <p>&copy; ${new Date().getFullYear()} ${developerName}. All rights reserved.</p>
       <p style="margin-top: 6px;">Compliant with Google Play Developer Program Policies</p>
     </div>
   </div>
