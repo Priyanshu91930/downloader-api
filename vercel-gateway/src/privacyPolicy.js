@@ -5,7 +5,7 @@
 
 const PLATFORM_CONFIGS = {
   twitch: {
-    appName: "Twitch Video & Clip Downloader",
+    appName: "Twitch Video Downloader",
     shortName: "Twitch Downloader",
     packageName: "com.twitchvideodownloader.app",
     developerName: "Swadeshi App Studio",
@@ -20,6 +20,8 @@ const PLATFORM_CONFIGS = {
   kick: {
     appName: "Kick Video Downloader",
     shortName: "Kick Downloader",
+    packageName: "com.kickvideodownloader.app",
+    developerName: "Swadeshi App Studio",
     platformName: "Kick",
     officialDomain: "kick.com",
     contentType: "clips, streams, and VODs",
@@ -29,8 +31,10 @@ const PLATFORM_CONFIGS = {
     copyrightNotice: "Please obtain proper authorization before downloading or distributing content. Downloaded media must strictly be used for personal, offline viewing.",
   },
   instagram: {
-    appName: "Video Downloader for Instagram",
+    appName: "Insta Downloader",
     shortName: "Insta Downloader",
+    packageName: "com.instaadownloader.app",
+    developerName: "Swadeshi App Studio",
     platformName: "Instagram",
     officialDomain: "instagram.com",
     contentType: "reels, photos, and stories",
@@ -40,8 +44,10 @@ const PLATFORM_CONFIGS = {
     copyrightNotice: "Please respect intellectual property rights. Do not repost or monetize content downloaded using this app without express permission from the copyright owner.",
   },
   threads: {
-    appName: "Video Downloader for Threads",
+    appName: "Threads Video Downloader",
     shortName: "Threads Downloader",
+    packageName: "com.threadsdownloader.app",
+    developerName: "Swadeshi App Studio",
     platformName: "Threads",
     officialDomain: "threads.net",
     contentType: "videos, photos, and posts",
@@ -51,8 +57,10 @@ const PLATFORM_CONFIGS = {
     copyrightNotice: "Downloaded media must be for personal, offline use only.",
   },
   pinterest: {
-    appName: "Video Downloader for Pinterest",
+    appName: "Pinterest Video Downloader",
     shortName: "Pin Downloader",
+    packageName: "com.anihub.pinterestdownloader",
+    developerName: "Swadeshi App Studio",
     platformName: "Pinterest",
     officialDomain: "pinterest.com",
     contentType: "pins, ideas, and video clips",
@@ -64,6 +72,7 @@ const PLATFORM_CONFIGS = {
   default: {
     appName: "Universal Video Downloader",
     shortName: "Video Downloader",
+    developerName: "Swadeshi App Studio",
     platformName: "Social Media",
     officialDomain: "the respective platform",
     contentType: "public media and videos",
@@ -89,7 +98,7 @@ function renderPrivacyPolicyHtml(slug, query = {}) {
   const cfg = getPlatformConfig(slug);
   const appName = query.appName || query.app || cfg.appName;
   const developerName = query.dev || query.developer || query.entity || cfg.developerName || process.env.DEVELOPER_NAME || "Swadeshi App Studio";
-  const packageName = query.pkg || query.package || query.appId || cfg.packageName || process.env.PACKAGE_NAME || "com.twitchvideodownloader.app";
+  const packageName = query.pkg || query.package || query.appId || cfg.packageName || process.env.PACKAGE_NAME || "";
   const developerEmail = query.email || query.contact || process.env.DEVELOPER_EMAIL || "solankipriyanshu94@gmail.com";
   const updatedDate = "November 2026";
 
