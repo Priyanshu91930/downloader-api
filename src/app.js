@@ -33,6 +33,13 @@ const limiter = rateLimit({
 });
 app.use("/api", limiter);
 
+// --- Google AdMob app-ads.txt verification ---
+app.get("/app-ads.txt", (req, res) => {
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=86400");
+  return res.send("google.com, pub-9717309889631554, DIRECT, f08c47fec0942fa0\n");
+});
+
 // --- Static frontend (simple endpoint tester) ---
 // Short maxAge so active development picks up changes reasonably fast,
 // while repeat visits within that window skip a full re-fetch. etag stays

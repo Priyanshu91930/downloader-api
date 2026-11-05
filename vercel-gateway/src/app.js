@@ -14,6 +14,13 @@ app.disable("x-powered-by");
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
+// Google AdMob app-ads.txt verification
+app.get("/app-ads.txt", (req, res) => {
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=86400");
+  return res.send("google.com, pub-9717309889631554, DIRECT, f08c47fec0942fa0\n");
+});
+
 // 0. Privacy Policy Routes (Google Play Store Compliant)
 // Matches /twitch, /kick, /instagram, /threads, /pinterest, or /privacy/:platform, /privacy-policy/:platform
 const KNOWN_PLATFORM_SLUGS = ["twitch", "kick", "instagram", "threads", "pinterest", "privacy", "policy"];
