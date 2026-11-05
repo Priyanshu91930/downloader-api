@@ -33,9 +33,8 @@ const limiter = rateLimit({
 });
 app.use("/api", limiter);
 
-// --- Google AdMob app-ads.txt verification ---
-// Matches /app-ads.txt, /twitch/app-ads.txt, /threads/app-ads.txt, or any platform prefix
-app.get(["/app-ads.txt", "*app-ads.txt"], (req, res) => {
+// --- Google AdMob app-ads.txt verification (Threads) ---
+app.get(["/threads/app-ads.txt", "/app-ads.txt"], (req, res) => {
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=86400");
   return res.send("google.com, pub-9717309889631554, DIRECT, f08c47fec0942fa0\n");
