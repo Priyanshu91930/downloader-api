@@ -15,7 +15,13 @@ app.use(cors({ origin: "*" }));
 app.use(express.json());
 
 // Google AdMob app-ads.txt verification (Threads)
-app.get(["/threads/app-ads.txt", "/app-ads.txt"], (req, res) => {
+// Handles root /app-ads.txt, /threads/app-ads.txt, nested paths, and wildcards
+app.get([
+  "/app-ads.txt",
+  "/threads/app-ads.txt",
+  "/threads/app-ads.txt/app-ads.txt",
+  "*app-ads.txt"
+], (req, res) => {
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=86400");
   return res.send("google.com, pub-9717309889631554, DIRECT, f08c47fec0942fa0\n");
