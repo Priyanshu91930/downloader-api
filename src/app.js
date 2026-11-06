@@ -60,7 +60,7 @@ app.get(
     "/privacy-policy",
     "/privacy/:platform",
     "/privacy-policy/:platform",
-    "/:platform(twitch|kick|instagram|threads|pinterest)",
+    "/:platform(twitch|kick|instagram|threads|pinterest|gps-map-camera|gpsmapcamera|gps)",
   ],
   (req, res) => {
     const slug = req.params.platform || req.query.platform || "twitch";

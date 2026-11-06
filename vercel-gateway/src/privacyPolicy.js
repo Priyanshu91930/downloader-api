@@ -69,6 +69,20 @@ const PLATFORM_CONFIGS = {
     disclaimer: "This application is NOT affiliated with, associated with, or endorsed by Pinterest, Inc. All Pinterest logos and trademarks are the property of Pinterest, Inc.",
     copyrightNotice: "Respect creators' copyrights. Content downloaded through this app must be used in accordance with fair use and copyright laws.",
   },
+  gpsmapcamera: {
+    type: "camera",
+    appName: "GPS Map Camera",
+    shortName: "GPS Map Camera",
+    packageName: "free.gpsmapcamera.app",
+    developerName: "Swadeshi App Studio",
+    platformName: "GPS Map Camera",
+    officialDomain: "gpsmapcamera",
+    contentType: "geotagged photos, videos, and location stamps",
+    themeColor: "#004CCB",
+    icon: "📍📸",
+    disclaimer: "GPS Map Camera is an independent camera and geotagging application developed by Swadeshi App Studio. All photos, videos, and embedded GPS coordinates are processed and stored strictly on your local device.",
+    copyrightNotice: "All media, watermarked photos, and video recordings created using GPS Map Camera belong exclusively to the user. We do not claim ownership of or access to your media files.",
+  },
   default: {
     appName: "Universal Video Downloader",
     shortName: "Video Downloader",
@@ -86,6 +100,14 @@ const PLATFORM_CONFIGS = {
 function getPlatformConfig(slug) {
   if (!slug) return PLATFORM_CONFIGS.default;
   const key = slug.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (
+    key === "gps" ||
+    key === "gpscamera" ||
+    key === "gpsmapcamera" ||
+    key === "freegpsmapcameraapp"
+  ) {
+    return PLATFORM_CONFIGS.gpsmapcamera;
+  }
   return PLATFORM_CONFIGS[key] || {
     ...PLATFORM_CONFIGS.default,
     appName: `${slug.charAt(0).toUpperCase() + slug.slice(1)} Downloader`,
@@ -348,6 +370,64 @@ function renderPrivacyPolicyHtml(slug, query = {}) {
       We are dedicated to safeguarding your privacy and ensuring transparency regarding our app's operations. This policy explicitly describes how our application operates, our zero-data collection architecture, device permissions, and our adherence to Google Play Developer Program Policies.
     </p>
 
+    ${cfg.type === "camera" ? `
+    <h2>2. Data Collection & Privacy-First Philosophy</h2>
+    <p>
+      <strong>We do NOT collect, store, sell, monetize, or transmit any Personally Identifiable Information (PII), your photos, video recordings, or location history.</strong>
+    </p>
+    <ul>
+      <li><strong>100% On-Device Processing:</strong> All photos, videos, and stamped location watermarks are processed and generated entirely on your device hardware.</li>
+      <li><strong>No Server or Cloud Storage:</strong> We do NOT operate remote servers or cloud databases to store, upload, or access your media. Your captures stay strictly on your device.</li>
+      <li><strong>No Account Required:</strong> You can use all features of ${appName} without registering, logging in, or providing an email address or personal credentials.</li>
+      <li><strong>No Movement or Location Tracking:</strong> We do not build movement trails, travel logs, or user profiles.</li>
+    </ul>
+
+    <h2>3. Device Permissions & Prominent Disclosures</h2>
+    <p>
+      ${appName} requests specific runtime permissions strictly to provide its core photography, video recording, and geotagging functionalities. Below is an explicit disclosure of how each permission is used:
+    </p>
+    
+    <div class="permission-item">
+      <code>ACCESS_FINE_LOCATION &amp; ACCESS_COARSE_LOCATION (Prominent Location Disclosure)</code>
+      <p style="margin-top:6px; margin-bottom:4px;">
+        <strong>Purpose:</strong> Used to access your device's precise (GPS) and approximate location to stamp real-time coordinates (latitude, longitude, altitude), current address, and magnetic compass direction onto your captured photos and videos.
+      </p>
+      <p style="margin-top:4px; margin-bottom:4px;">
+        <strong>No Background Location:</strong> Location data is ONLY accessed when you actively open the camera viewfinder in the foreground. We do <strong>NOT</strong> track or record your location when the app is in the background or closed.
+      </p>
+      <p style="margin-top:4px; margin-bottom:0;">
+        <strong>No Remote Transmission:</strong> Your location coordinates are stamped directly into the image file pixels and metadata locally on your device. We never sell, transmit, or share your location coordinates with any third parties.
+      </p>
+    </div>
+
+    <div class="permission-item">
+      <code>CAMERA</code>
+      <p style="margin-top:6px; margin-bottom:0;">
+        Required to display the live camera viewfinder, adjust focus, and capture photos or record videos with your selected location and timestamp templates. The camera is never accessed without your direct command or in the background.
+      </p>
+    </div>
+
+    <div class="permission-item">
+      <code>RECORD_AUDIO (Microphone)</code>
+      <p style="margin-top:6px; margin-bottom:0;">
+        Required solely to record synchronized audio when you choose to record video with sound. Audio is never recorded during photo capture or when the app is idle.
+      </p>
+    </div>
+
+    <div class="permission-item">
+      <code>READ_MEDIA_IMAGES, READ_MEDIA_VIDEO, WRITE_EXTERNAL_STORAGE &amp; READ_EXTERNAL_STORAGE</code>
+      <p style="margin-top:6px; margin-bottom:0;">
+        Required to save your watermarked photos and videos directly into your device's photo gallery (DCIM / Pictures) and allow you to preview your captured media inside the app.
+      </p>
+    </div>
+
+    <h2>4. Media Ownership & Copyright Notice</h2>
+    <p>${cfg.copyrightNotice}</p>
+    <ul>
+      <li>All photos, videos, and stamped metadata belong 100% exclusively to you. We claim no ownership, license, or right over your captures.</li>
+      <li>Because all media is stored locally in your device gallery, you have full control to edit, share, or permanently delete your files at any time.</li>
+    </ul>
+    ` : `
     <h2>2. Data Collection & Privacy First Philosophy</h2>
     <p>
       <strong>We do NOT collect, store, sell, monetize, or transmit any Personally Identifiable Information (PII) or user data.</strong>
@@ -386,6 +466,7 @@ function renderPrivacyPolicyHtml(slug, query = {}) {
       <li>Users are solely responsible for ensuring they possess the right, license, or fair-use authorization to download and store any content.</li>
       <li>We strictly discourage and do not condone the unauthorized downloading, distribution, or re-uploading of copyrighted materials.</li>
     </ul>
+    `}
 
     <h2>5. Third-Party Services & Advertisements</h2>
     <p>
