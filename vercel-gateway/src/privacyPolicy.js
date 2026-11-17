@@ -83,6 +83,20 @@ const PLATFORM_CONFIGS = {
     disclaimer: "GPS Map Camera is an independent camera and geotagging application developed by Swadeshi App Studio. All photos, videos, and embedded GPS coordinates are processed and stored strictly on your local device.",
     copyrightNotice: "All media, watermarked photos, and video recordings created using GPS Map Camera belong exclusively to the user. We do not claim ownership of or access to your media files.",
   },
+  qrscanner: {
+    type: "scanner",
+    appName: "QR & Barcode Scanner",
+    shortName: "QR Scanner",
+    packageName: "com.qrscannerbarcodereader.app",
+    developerName: "Swadeshi App Studio",
+    platformName: "QR & Barcode Scanner",
+    officialDomain: "qrscanner",
+    contentType: "scanned QR codes, barcodes, and generated codes",
+    themeColor: "#00E676",
+    icon: "📷🔍",
+    disclaimer: "QR & Barcode Scanner is an independent utility application developed by Swadeshi App Studio. All scanning, barcode recognition, and code generation occur 100% locally on your device.",
+    copyrightNotice: "All scanned records, history, and generated QR codes belong exclusively to the user. We do not claim ownership of, monitor, or access your scanned content or generated codes.",
+  },
   default: {
     appName: "Universal Video Downloader",
     shortName: "Video Downloader",
@@ -107,6 +121,15 @@ function getPlatformConfig(slug) {
     key === "freegpsmapcameraapp"
   ) {
     return PLATFORM_CONFIGS.gpsmapcamera;
+  }
+  if (
+    key === "qr" ||
+    key === "qrscanner" ||
+    key === "barcodescanner" ||
+    key === "qrbarcodescanner" ||
+    key === "comqrscannerbarcodereaderapp"
+  ) {
+    return PLATFORM_CONFIGS.qrscanner;
   }
   return PLATFORM_CONFIGS[key] || {
     ...PLATFORM_CONFIGS.default,
@@ -370,7 +393,65 @@ function renderPrivacyPolicyHtml(slug, query = {}) {
       We are dedicated to safeguarding your privacy and ensuring transparency regarding our app's operations. This policy explicitly describes how our application operates, our zero-data collection architecture, device permissions, and our adherence to Google Play Developer Program Policies.
     </p>
 
-    ${cfg.type === "camera" ? `
+    ${cfg.type === "scanner" ? `
+    <h2>2. Data Collection & Zero-Log Architecture</h2>
+    <p>
+      <strong>We do NOT collect, store, sell, monetize, or transmit any Personally Identifiable Information (PII), scanned code contents, or scan history.</strong>
+    </p>
+    <ul>
+      <li><strong>100% Local On-Device Processing:</strong> All QR code and barcode recognition, decoding, and parsing occur entirely in real-time on your device using offline image recognition algorithms.</li>
+      <li><strong>No Data Transmission:</strong> The contents of the codes you scan (such as Wi-Fi network credentials, website URLs, text messages, vCards, phone numbers, or product codes) are NEVER sent to or stored on our servers.</li>
+      <li><strong>No Server or Cloud Database:</strong> We do NOT operate external servers or cloud accounts to log or backup your scans. Your scan history is saved exclusively on your phone's local storage.</li>
+      <li><strong>No Account Required:</strong> You can use all features of ${appName} freely without registration, signing in, or providing your name, email, or phone number.</li>
+      <li><strong>No Behavioral Tracking:</strong> We do not track what products or links you scan, and we never build advertising or user profiles based on your scans.</li>
+    </ul>
+
+    <h2>3. Device Permissions & Prominent Disclosures</h2>
+    <p>
+      ${appName} requests specific runtime permissions strictly to provide its core code scanning and code generation features. Below is an explicit disclosure of how each permission is used:
+    </p>
+    
+    <div class="permission-item">
+      <code>CAMERA</code>
+      <p style="margin-top:6px; margin-bottom:4px;">
+        <strong>Purpose:</strong> Required to display the live camera viewfinder and detect, scan, and decode QR codes and barcodes in real-time.
+      </p>
+      <p style="margin-top:4px; margin-bottom:0;">
+        <strong>No Photos/Videos Recorded:</strong> Camera frames are processed strictly in temporary device RAM for barcode recognition and discarded immediately. The app does NOT secretly record videos, take unauthorized photos, or access the camera in the background or when the app is closed.
+      </p>
+    </div>
+
+    <div class="permission-item">
+      <code>READ_MEDIA_IMAGES, READ_EXTERNAL_STORAGE &amp; WRITE_EXTERNAL_STORAGE (Photo Library Access)</code>
+      <p style="margin-top:6px; margin-bottom:4px;">
+        <strong>Scan from Gallery:</strong> Allows you to select an image from your photo library containing a QR code or barcode to decode it offline.
+      </p>
+      <p style="margin-top:4px; margin-bottom:0;">
+        <strong>Save Generated Codes:</strong> Allows you to export and save custom QR codes or barcodes you generate directly into your device's photo gallery. We never read or upload unrelated photos from your gallery.
+      </p>
+    </div>
+
+    <div class="permission-item">
+      <code>FLASHLIGHT</code>
+      <p style="margin-top:6px; margin-bottom:0;">
+        Allows you to manually toggle your device's camera flashlight / torch to assist in scanning codes in dark or low-light conditions.
+      </p>
+    </div>
+
+    <div class="permission-item">
+      <code>VIBRATE</code>
+      <p style="margin-top:6px; margin-bottom:0;">
+        Provides an instant tactile haptic feedback vibration when a QR code or barcode is successfully scanned and recognized.
+      </p>
+    </div>
+
+    <h2>4. Scan History & Data Control</h2>
+    <p>${cfg.copyrightNotice}</p>
+    <ul>
+      <li>Your scan history is stored locally on your device. You can clear individual history records or wipe all history at any time with a single tap in the app settings.</li>
+      <li>Uninstalling the app permanently purges all local app data and scan history from your device.</li>
+    </ul>
+    ` : cfg.type === "camera" ? `
     <h2>2. Data Collection & Privacy-First Philosophy</h2>
     <p>
       <strong>We do NOT collect, store, sell, monetize, or transmit any Personally Identifiable Information (PII), your photos, video recordings, or location history.</strong>
