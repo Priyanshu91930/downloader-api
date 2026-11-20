@@ -24,7 +24,6 @@
     "access": "public"
   },
   "dependencies": {
-    "@distube/ytdl-core": "^5.2.1",
     "btch-downloader": "^6.4.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
