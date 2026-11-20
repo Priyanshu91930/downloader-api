@@ -32,7 +32,7 @@ export default {
     if (url.pathname === '/api/platforms') {
       return new Response(JSON.stringify({
         status: true,
-        platforms: ['instagram', 'threads', 'pinterest'],
+        platforms: ['youtube', 'instagram', 'threads', 'pinterest', 'tiktok', 'facebook', 'twitter'],
       }), {
         status: 200,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
@@ -150,20 +150,92 @@ export default {
   <title>HD Video Downloader API</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0d1117; color: #c9d1d9; margin: 0; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; }
-    .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 32px; max-width: 500px; width: 100%; box-shadow: 0 8px 24px rgba(0,0,0,0.5); text-align: center; }
-    h1 { color: #58a6ff; font-size: 24px; margin-bottom: 8px; }
-    p { color: #8b949e; font-size: 14px; margin-bottom: 24px; }
-    code { background: #21262d; color: #79c0ff; padding: 4px 8px; border-radius: 6px; font-size: 13px; word-break: break-all; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 28px; max-width: 540px; width: 100%; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+    h1 { color: #58a6ff; font-size: 22px; margin-top: 0; margin-bottom: 8px; text-align: center; }
+    p.sub { color: #8b949e; font-size: 13px; margin-bottom: 20px; text-align: center; }
+    code { background: #21262d; color: #79c0ff; padding: 4px 8px; border-radius: 6px; font-size: 13px; word-break: break-all; display: inline-block; margin: 3px 0; }
+    .input-box { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #30363d; background: #0d1117; color: #fff; font-size: 14px; box-sizing: border-box; margin-bottom: 10px; }
+    .input-box:focus { outline: none; border-color: #58a6ff; }
+    .btn { width: 100%; padding: 12px; border-radius: 8px; border: none; background: #238636; color: #fff; font-weight: bold; font-size: 14px; cursor: pointer; transition: background 0.2s; }
+    .btn:hover { background: #2ea043; }
+    .btn:disabled { background: #484f58; cursor: not-allowed; }
+    .result-box { margin-top: 16px; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 14px; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 250px; overflow-y: auto; display: none; }
+    .btn-download { display: inline-block; margin-top: 10px; padding: 10px 16px; background: #1f6feb; color: #fff; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 13px; }
+    .endpoints { margin-top: 24px; border-top: 1px solid #30363d; padding-top: 18px; }
+    .endpoints h3 { font-size: 14px; color: #8b949e; margin: 0 0 10px 0; }
   </style>
 </head>
 <body>
   <div class="card">
     <h1>🚀 Downloader API (Cloudflare Worker)</h1>
-    <p>Hybrid Edge + Vercel Fallback. 100% Reliable.</p>
-    <p>Endpoint: <code>/api/download/instagram?url=YOUR_INSTAGRAM_URL</code></p>
-    <p>Endpoint: <code>/api/download/threads?url=YOUR_THREADS_URL</code></p>
-    <p>Endpoint: <code>/api/download/pinterest?url=YOUR_PINTEREST_URL</code></p>
+    <p class="sub">Ultra-Fast Edge Scraping with Automatic Backend Fallback.</p>
+    
+    <div>
+      <input id="linkInput" class="input-box" type="text" placeholder="Paste Instagram, Threads, YouTube, Pinterest link..." autocomplete="off" />
+      <button id="fetchBtn" class="btn" type="button">Fetch Download Link</button>
+      <div id="downloadContainer" style="display:none;margin-top:12px;text-align:center;"></div>
+      <div id="output" class="result-box"></div>
+    </div>
+
+    <div class="endpoints">
+      <h3>Available API Endpoints:</h3>
+      <p>YouTube: <br><code id="ep-yt">/api/download/youtube?url=...</code></p>
+      <p>Instagram: <br><code id="ep-ig">/api/download/instagram?url=...</code></p>
+      <p>Threads: <br><code id="ep-th">/api/download/threads?url=...</code></p>
+      <p>Pinterest: <br><code id="ep-pin">/api/download/pinterest?url=...</code></p>
+    </div>
   </div>
+
+  <script>
+    const origin = window.location.origin;
+    document.getElementById('ep-yt').textContent = origin + '/api/download/youtube?url=YOUR_YOUTUBE_URL';
+    document.getElementById('ep-ig').textContent = origin + '/api/download/instagram?url=YOUR_INSTAGRAM_URL';
+    document.getElementById('ep-th').textContent = origin + '/api/download/threads?url=YOUR_THREADS_URL';
+    document.getElementById('ep-pin').textContent = origin + '/api/download/pinterest?url=YOUR_PINTEREST_URL';
+
+    const input = document.getElementById('linkInput');
+    const btn = document.getElementById('fetchBtn');
+    const out = document.getElementById('output');
+    const dlBox = document.getElementById('downloadContainer');
+
+    function detectPlatform(val) {
+      if (/(youtube\.com|youtu\.be)/i.test(val)) return 'youtube';
+      if (/instagram\.com/i.test(val)) return 'instagram';
+      if (/threads\.(com|net)/i.test(val)) return 'threads';
+      if (/(pinterest\.[a-z.]+|pin\.it)/i.test(val)) return 'pinterest';
+      if (/tiktok\.com/i.test(val)) return 'tiktok';
+      return 'instagram';
+    }
+
+    btn.addEventListener('click', async () => {
+      const url = input.value.trim();
+      if (!url) return alert('Please paste a media URL first!');
+      const p = detectPlatform(url);
+      btn.disabled = true;
+      btn.textContent = 'Fetching from ' + p + '...';
+      out.style.display = 'block';
+      out.textContent = 'Requesting ' + origin + '/api/download/' + p + '...';
+      dlBox.style.display = 'none';
+      dlBox.innerHTML = '';
+
+      try {
+        const res = await fetch(origin + '/api/download/' + p + '?url=' + encodeURIComponent(url));
+        const data = await res.json();
+        out.textContent = JSON.stringify(data, null, 2);
+
+        const mediaUrl = data.url || (data.normalized && data.normalized.media && data.normalized.media[0] && data.normalized.media[0].url) || (data.result && data.result.video);
+        if (mediaUrl) {
+          dlBox.innerHTML = '<a class="btn-download" href="' + mediaUrl + '" target="_blank" rel="noopener">Direct Download File</a>';
+          dlBox.style.display = 'block';
+        }
+      } catch (err) {
+        out.textContent = 'Error: ' + err.message;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Fetch Download Link';
+      }
+    });
+  </script>
 </body>
 </html>`, {
       status: 200,
