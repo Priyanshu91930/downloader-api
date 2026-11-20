@@ -363,14 +363,9 @@ function safeStringify(value, indent = 2) {
     const card = document.createElement("div");
     card.className = "media-card";
 
-    const hasVariants = item.variants.length > 1;
     const activeVariant = item.variants[0] || null;
     const type = activeVariant ? activeVariant.type : "file";
 
-    // If we have a real thumbnail, that's a stable preview regardless of
-    // which quality/format variant gets picked below. Otherwise the preview
-    // IS the currently-selected variant, so it needs to update when the
-    // dropdown changes — wrapped in its own container so we can swap it.
     const usesFixedThumbnail = Boolean(item.thumbnail && type !== "image");
     const initialPreview = usesFixedThumbnail
       ? `<img src="${esc(item.thumbnail)}" loading="lazy" alt="${esc(item.title || "thumbnail")}" />`
@@ -378,42 +373,26 @@ function safeStringify(value, indent = 2) {
         ? buildPreviewHtml(type, activeVariant.url, item.title || "media")
         : "";
 
-    const selectHtml = hasVariants
-      ? `<select class="media-variant-select">
-          ${item.variants
-            .map((v, i) => `<option value="${i}">${esc(v.key)} · ${esc(v.type)}</option>`)
-            .join("")}
-        </select>`
-      : "";
-
     const titleHtml = item.title ? `<div class="media-card-title">${esc(item.title)}</div>` : "";
 
-    card.innerHTML = `
-      <div class="media-preview">${initialPreview}</div>
-      <div class="media-card-body">
-        ${titleHtml}
-        <div class="media-card-label">${esc(activeVariant ? activeVariant.key : item.openUrl ? [item.meta, item.kind || "link"].filter(Boolean).join(" · ") : "no media")}${activeVariant ? " · " + esc(type) : ""}</div>
-        ${selectHtml}
-        <button type="button" class="media-download-btn">⬇ Download</button>
-        <div class="media-download-status" style="display:none;"></div>
-      </div>
-    `;
-
     if (!item.variants.length) {
-      const btn = card.querySelector(".media-download-btn");
+      const openBtnHtml = item.openUrl
+        ? `<button type="button" class="media-open-btn">Open ↗</button>`
+        : `<button type="button" class="media-download-btn" disabled>No downloadable link</button>`;
+
+      card.innerHTML = `
+        <div class="media-preview">${initialPreview}</div>
+        <div class="media-card-body">
+          ${titleHtml}
+          <div class="media-card-label">${esc(item.openUrl ? [item.meta, item.kind || "link"].filter(Boolean).join(" · ") : "no media")}</div>
+          <div class="media-download-actions">${openBtnHtml}</div>
+        </div>
+      `;
+
       if (item.openUrl) {
-        // A search-hit-style item (e.g. YouTube search results) — the URL
-        // is a source page to open/re-download, not a file this server can
-        // stream, so this must NOT keep the "media-download-btn" class or
-        // the click-to-download wiring in renderMediaCards below would try
-        // to fetch() this as if it were a real download and fail.
-        btn.textContent = "Open ↗";
-        btn.className = "media-open-btn";
+        const btn = card.querySelector(".media-open-btn");
         btn.addEventListener("click", () => window.open(item.openUrl, "_blank", "noopener,noreferrer"));
 
-        // A YouTube search hit can be re-run through the `youtube` platform
-        // to get real download links. Playlists can't (the downloader takes
-        // a single video), so they only get "Open".
         if (item.kind === "video" && platforms.youtube && /(youtube\.com|youtu\.be)/i.test(item.openUrl)) {
           const getBtn = document.createElement("button");
           getBtn.type = "button";
@@ -430,34 +409,36 @@ function safeStringify(value, indent = 2) {
           });
           btn.parentNode.insertBefore(getBtn, btn);
         }
-      } else {
-        btn.disabled = true;
-        btn.textContent = "No downloadable link";
       }
       return card;
     }
 
-    const select = card.querySelector(".media-variant-select");
-    const btn = card.querySelector(".media-download-btn");
-    const label = card.querySelector(".media-card-label");
-    const previewContainer = card.querySelector(".media-preview");
-    btn.dataset.proxyUrl = buildProxyUrl(platform, index, activeVariant.url);
+    const downloadButtonsHtml = item.variants.map((v) => {
+      const isAudio = v.type === "audio";
+      const icon = isAudio ? "🎵" : "🎬";
+      const btnClass = isAudio ? "media-download-btn media-btn-audio" : "media-download-btn";
+      return `
+        <div class="media-download-row">
+          <button type="button" class="${btnClass}" data-proxy-url="${buildProxyUrl(platform, index, v.url)}">
+            ${icon} Download ${esc(v.key)}
+          </button>
+          <div class="media-download-status" style="display:none;"></div>
+        </div>
+      `;
+    }).join("");
 
-    if (select) {
-      select.addEventListener("change", () => {
-        const chosen = item.variants[Number(select.value)];
+    const formatCount = item.variants.length > 1 ? `${item.variants.length} formats available` : (activeVariant ? activeVariant.key : "ready to download");
 
-        btn.dataset.proxyUrl = buildProxyUrl(platform, index, chosen.url);
-        label.textContent = `${chosen.key} · ${chosen.type}`;
-
-        // Only swap the live preview if it isn't pinned to a fixed thumbnail —
-        // switching HD/SD/audio should actually reflect what you're about to
-        // download, not silently keep showing whatever loaded first.
-        if (!usesFixedThumbnail) {
-          previewContainer.innerHTML = buildPreviewHtml(chosen.type, chosen.url, item.title || "media");
-        }
-      });
-    }
+    card.innerHTML = `
+      <div class="media-preview">${initialPreview}</div>
+      <div class="media-card-body">
+        ${titleHtml}
+        <div class="media-card-label">${esc(formatCount)}</div>
+        <div class="media-download-actions">
+          ${downloadButtonsHtml}
+        </div>
+      </div>
+    `;
 
     return card;
   }
