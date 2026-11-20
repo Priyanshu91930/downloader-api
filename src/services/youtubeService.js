@@ -1,4 +1,10 @@
-const { Ytdl, Client } = require("@distube/ytdl-core");
+let ytdlModule = null;
+async function getYtdl() {
+  if (!ytdlModule) {
+    ytdlModule = await import("@distube/ytdl-core");
+  }
+  return ytdlModule;
+}
 
 function isYouTubeUrl(input) {
   return /(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/|v\/))([A-Za-z0-9_-]{11})/i.test(String(input || ""));
@@ -17,6 +23,7 @@ async function scrapeYouTubeDirectly(inputUrl) {
     if (!videoId) return null;
     const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
+    const { Ytdl, Client } = await getYtdl();
     const yt = new Ytdl({
       clients: [Client.Tv, Client.WebEmbedded, Client.Mweb, Client.VisionOS]
     });
