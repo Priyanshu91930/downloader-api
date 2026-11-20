@@ -290,16 +290,27 @@ async function scrapeInstagramDirectly(inputUrl) {
     }
   } catch (e) {}
 
-  // Engine 2: Botcahx Provider Engine Fallback
+  // Engine 2: Direct Embed & Meta Tag Fallback
   try {
-    const botRes = await fetch(`https://api.botcahx.biz/api/dowloader/ig?url=${encodeURIComponent(targetUrl)}&apikey=btch`);
-    if (botRes.ok) {
-      const json = await botRes.json();
-      if (json && json.status && json.result) {
-        let videoUrl = Array.isArray(json.result) ? json.result[0]?.url : json.result.url || json.result;
-        if (typeof videoUrl === 'string' && videoUrl.startsWith('http')) {
-          return { title: 'Instagram Reel', url: videoUrl, media: [{ quality: 'HD Video', type: 'video', url: videoUrl }] };
-        }
+    const embedRes = await fetch(`https://www.instagram.com/reel/${shortcode}/`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+    if (embedRes.ok) {
+      const html = await embedRes.text();
+      const ogVideoMatch = html.match(/meta property="og:video" content="([^"]+)"/i) ||
+                           html.match(/content="([^"]+)" property="og:video/i);
+      if (ogVideoMatch) {
+        const videoUrl = ogVideoMatch[1].replace(/&amp;/g, '&').replace(/\\u0026/g, '&');
+        return {
+          title: 'Instagram Reel',
+          thumbnail: videoUrl,
+          url: videoUrl,
+          media: [{ quality: 'HD Video', type: 'video', url: videoUrl }],
+        };
       }
     }
   } catch (_) {}
