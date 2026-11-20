@@ -64,32 +64,43 @@ function guessMediaType({ label, url, mimetype, ext } = {}) {
 
 // --- youtube: {developer, status, title, thumbnail, author, mp3, mp4} ---
 function youtube(raw) {
+  const inner = raw && raw.result && typeof raw.result === "object" ? raw.result : null;
+  const target = inner ? { ...inner, ...raw } : raw;
   const media = [];
-  if (isUrl(raw.mp4)) {
-    const is1080 = String(raw.mp4).includes("itag=137");
-    const is720 = String(raw.mp4).includes("itag=22");
-    const is480 = String(raw.mp4).includes("itag=135");
-    const quality = is1080 ? "1080p FHD" : is720 ? "720p HD" : is480 ? "480p" : "360p SD";
-    media.push({ label: `MP4 Video (${quality})`, type: "video", url: raw.mp4 });
-  } else if (isUrl(raw.video)) {
-    media.push({ label: "MP4 Video", type: "video", url: raw.video });
-  }
 
-  if (isUrl(raw.mp3)) {
-    media.push({ label: "MP3 Audio (High Quality)", type: "audio", url: raw.mp3 });
-  } else if (isUrl(raw.audio)) {
-    media.push({ label: "MP3 Audio", type: "audio", url: raw.audio });
-  }
-
-  if (Array.isArray(raw.media)) {
-    for (const m of raw.media) {
-      if (isUrl(m.url) && !media.some((x) => x.url === m.url)) {
-        media.push({ label: m.label || m.quality || "Media", type: m.type || guessMediaType(m), url: m.url });
-      }
+  // Check custom media array first (from direct scraper)
+  const rawMediaList = Array.isArray(target.media) ? target.media : Array.isArray(inner && inner.media) ? inner.media : Array.isArray(raw.media) ? raw.media : [];
+  for (const m of rawMediaList) {
+    if (m && isUrl(m.url) && !media.some((x) => x.url === m.url)) {
+      media.push({ label: m.label || m.quality || "Media", type: m.type || guessMediaType(m), url: m.url });
     }
   }
 
-  return { kind: "media", title: raw.title || null, thumbnail: raw.thumbnail || null, author: raw.author || null, media };
+  if (isUrl(target.mp4)) {
+    const is1080 = String(target.mp4).includes("itag=137");
+    const is720 = String(target.mp4).includes("itag=22");
+    const is480 = String(target.mp4).includes("itag=135");
+    const quality = is1080 ? "1080p FHD" : is720 ? "720p HD" : is480 ? "480p" : "360p SD";
+    if (!media.some((x) => x.url === target.mp4)) {
+      media.push({ label: `MP4 Video (${quality})`, type: "video", url: target.mp4 });
+    }
+  } else if (isUrl(target.video)) {
+    if (!media.some((x) => x.url === target.video)) {
+      media.push({ label: "MP4 Video", type: "video", url: target.video });
+    }
+  }
+
+  if (isUrl(target.mp3)) {
+    if (!media.some((x) => x.url === target.mp3)) {
+      media.push({ label: "MP3 Audio (High Quality)", type: "audio", url: target.mp3 });
+    }
+  } else if (isUrl(target.audio)) {
+    if (!media.some((x) => x.url === target.audio)) {
+      media.push({ label: "MP3 Audio", type: "audio", url: target.audio });
+    }
+  }
+
+  return { kind: "media", title: target.title || raw.title || null, thumbnail: target.thumbnail || raw.thumbnail || null, author: target.author || raw.author || null, media };
 }
 
 // --- youtube-search: {developer, status, result: {status, all: [...]}} ---
